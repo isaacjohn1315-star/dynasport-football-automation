@@ -73,112 +73,88 @@ function enrichEventData(
 
   return {
     ...eventData,
-
     competitionId:
       fixture.league?.id ??
       null,
-
     competition:
       competition?.name ??
       fixture.league?.name ??
       null,
-
     country:
       competition?.country ??
       fixture.league?.country ??
       null,
-
     competitionPriority:
       competition?.priority ??
       "other",
-
     season:
       fixture.league?.season ??
       null,
-
     fixtureDate:
       fixture.fixture?.date ??
       null,
-
     fixtureStatus:
       fixture.fixture?.status
         ?.short ??
       null,
-
     fixtureStatusLong:
       fixture.fixture?.status
         ?.long ??
       null,
-
     fixtureElapsed:
       fixture.fixture?.status
         ?.elapsed ??
       null,
-
     fixtureExtra:
       fixture.fixture?.status
         ?.extra ??
       null,
-
     homeTeam:
       fixture.teams?.home?.name ??
       null,
-
     awayTeam:
       fixture.teams?.away?.name ??
       null,
-
     homeTeamId:
       fixture.teams?.home?.id ??
       null,
-
     awayTeamId:
       fixture.teams?.away?.id ??
       null,
-
     homeScore:
       fixture.goals?.home ??
       null,
-
     awayScore:
       fixture.goals?.away ??
       null,
-
     halftimeHome:
       fixture.score?.halftime
         ?.home ??
       null,
-
     halftimeAway:
       fixture.score?.halftime
         ?.away ??
       null,
-
     fulltimeHome:
       fixture.score?.fulltime
         ?.home ??
       null,
-
     fulltimeAway:
       fixture.score?.fulltime
         ?.away ??
       null,
-
     extraTimeHome:
       fixture.score?.extratime
         ?.home ??
       null,
-
     extraTimeAway:
       fixture.score?.extratime
         ?.away ??
       null,
-
     penaltyHome:
       fixture.score?.penalty
         ?.home ??
       null,
-
     penaltyAway:
       fixture.score?.penalty
         ?.away ??
@@ -205,12 +181,6 @@ export async function GET(
     new Date();
 
   try {
-    /*
-     * ONE API request per Cron run.
-     *
-     * This is important because the free API-Football
-     * plan has a limited daily request allowance.
-     */
     const data =
       await footballApiRequest(
         "/fixtures",
@@ -222,13 +192,6 @@ export async function GET(
     const fixtures =
       normalizeFixtures(data);
 
-    /*
-     * ALL COMPETITIONS MODE
-     *
-     * We only reject malformed fixtures.
-     *
-     * We do NOT check a hard-coded competition ID list.
-     */
     const trackedFixtures =
       fixtures.filter(
         (fixture) =>
@@ -246,9 +209,6 @@ export async function GET(
       Record<string, unknown>
     > = [];
 
-    /*
-     * Process every live fixture independently.
-     */
     for (
       const fixture of trackedFixtures
     ) {
@@ -267,10 +227,6 @@ export async function GET(
           fixture.league
         );
 
-      /*
-       * Get events that have not already been
-       * successfully posted.
-       */
       const lifecycleEvents =
         await getNewEvents(
           fixture
@@ -289,15 +245,6 @@ export async function GET(
       newEvents +=
         lifecycleEvents.length;
 
-      /*
-       * IMPORTANT:
-       *
-       * Every event is handled individually.
-       *
-       * If five events happened between Cron runs,
-       * this loop can create five separate Facebook
-       * posts instead of combining them.
-       */
       for (
         const event of lifecycleEvents
       ) {
@@ -309,7 +256,6 @@ export async function GET(
 
         const enrichedEvent = {
           ...event,
-
           eventData:
             enrichedEventData,
         };
@@ -317,10 +263,6 @@ export async function GET(
         let message: string;
 
         try {
-          /*
-           * messages.ts is responsible for turning
-           * the lifecycle event into human Facebook copy.
-           */
           message =
             createFacebookMessage(
               enrichedEvent
@@ -374,15 +316,6 @@ export async function GET(
           continue;
         }
 
-        /*
-         * Post FIRST.
-         *
-         * We deliberately do not mark the event as posted
-         * until Facebook confirms success.
-         *
-         * This gives failed posts another chance on
-         * the next Cron run.
-         */
         const facebookResult =
           await postToFacebook(
             message
@@ -395,33 +328,25 @@ export async function GET(
 
           results.push({
             fixtureId,
-
             competition:
               competition?.name ??
               fixture.league
                 ?.name ??
               null,
-
             country:
               competition?.country ??
               fixture.league
                 ?.country ??
               null,
-
             eventKey:
               event.eventKey,
-
             eventType:
               event.eventType,
-
             minute:
               event.eventMinute,
-
             success: false,
-
             stage:
               "facebook",
-
             error:
               facebookResult.error ??
               "Facebook post failed",
@@ -430,49 +355,35 @@ export async function GET(
           continue;
         }
 
-        /*
-         * Facebook succeeded.
-         *
-         * Only NOW record the event in Neon.
-         */
         const marked =
           await markEventAsPosted(
-            enrichedEvent
+            enrichedEvent,
+            facebookResult.postId
           );
 
         if (!marked) {
-          /*
-           * The event may have been inserted by
-           * another simultaneous worker.
-           *
-           * Facebook has already received the post,
-           * so we report the database conflict rather
-           * than trying to publish it again.
-           */
           results.push({
             fixtureId,
-
             competition:
               competition?.name ??
               fixture.league
                 ?.name ??
               null,
-
+            country:
+              competition?.country ??
+              fixture.league
+                ?.country ??
+              null,
             eventKey:
               event.eventKey,
-
             eventType:
               event.eventType,
-
             success: true,
-
             stage:
               "database_conflict",
-
             facebookPostId:
               facebookResult.postId ??
               null,
-
             warning:
               "Facebook post succeeded but event was already recorded",
           });
@@ -484,37 +395,28 @@ export async function GET(
 
         results.push({
           fixtureId,
-
           competition:
             competition?.name ??
             fixture.league
               ?.name ??
             null,
-
           country:
             competition?.country ??
             fixture.league
               ?.country ??
             null,
-
           season:
             fixture.league?.season ??
             null,
-
           eventKey:
             event.eventKey,
-
           eventType:
             event.eventType,
-
           minute:
             event.eventMinute,
-
           success: true,
-
           stage:
             "completed",
-
           facebookPostId:
             facebookResult.postId ??
             null,
@@ -527,35 +429,23 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-
       mode:
         "all_competitions",
-
       apiRequest:
         "fixtures?live=all",
-
       fixturesReturned:
         fixtures.length,
-
       validFixtures:
         trackedFixtures.length,
-
       discoveredEvents,
-
       newEvents,
-
       facebookPosts,
-
       facebookFailures,
-
       startedAt:
         startedAt.toISOString(),
-
       finishedAt:
         finishedAt.toISOString(),
-
       results,
-
       timestamp:
         finishedAt.toISOString(),
     });
@@ -563,12 +453,10 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-
         error:
           error instanceof Error
             ? error.message
             : "Unknown automation error",
-
         timestamp:
           new Date().toISOString(),
       },
@@ -577,4 +465,4 @@ export async function GET(
       }
     );
   }
-    }
+          }

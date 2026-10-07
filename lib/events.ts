@@ -27,11 +27,22 @@ export type FootballEvent = {
 export type FootballFixture = {
   fixture?: {
     id?: number;
+
     date?: string;
 
+    referee?: string | null;
+
+    timezone?: string | null;
+
+    venue?: {
+      id?: number | null;
+      name?: string | null;
+      city?: string | null;
+    };
+
     status?: {
-      short?: string | null;
       long?: string | null;
+      short?: string | null;
       elapsed?: number | null;
       extra?: number | null;
     };
@@ -41,19 +52,25 @@ export type FootballFixture = {
     id?: number;
     name?: string | null;
     country?: string | null;
+    logo?: string | null;
+    flag?: string | null;
     season?: number | null;
+    round?: string | null;
+    standings?: boolean | null;
   };
 
   teams?: {
     home?: {
       id?: number;
       name?: string | null;
+      logo?: string | null;
       winner?: boolean | null;
     };
 
     away?: {
       id?: number;
       name?: string | null;
+      logo?: string | null;
       winner?: boolean | null;
     };
   };
@@ -87,15 +104,6 @@ export type FootballFixture = {
 
   events?: FootballEvent[];
 
-  /*
-   * API-Football may provide lineup,
-   * player and statistics information
-   * on responses where those fields
-   * are available.
-   *
-   * We do not make separate requests
-   * just to populate these fields.
-   */
   lineups?: unknown[];
 
   statistics?: unknown[];
@@ -123,14 +131,26 @@ export function createEventKey(
     event.assist?.id ?? 0;
 
   const type =
-    event.type ?? "unknown";
+    event.type
+      ?.toLowerCase()
+      .trim() ??
+    "unknown";
 
   const detail =
-    event.detail ?? "unknown";
+    event.detail
+      ?.toLowerCase()
+      .trim() ??
+    "unknown";
 
-  const comments =
-    event.comments ?? "";
-
+  /*
+   * Do NOT use comments as part of the primary
+   * event identity.
+   *
+   * API-Football can change comments between
+   * requests. Using comments could make the same
+   * event look like a brand-new event and cause
+   * duplicate Facebook posts.
+   */
   return [
     fixtureId,
     minute,
@@ -140,7 +160,6 @@ export function createEventKey(
     assistId,
     type,
     detail,
-    comments,
   ].join(":");
 }
 
@@ -150,17 +169,20 @@ export function getEventType(
   const type =
     event.type
       ?.toLowerCase()
-      .trim() ?? "";
+      .trim() ??
+    "";
 
   const detail =
     event.detail
       ?.toLowerCase()
-      .trim() ?? "";
+      .trim() ??
+    "";
 
   const comments =
     event.comments
       ?.toLowerCase()
-      .trim() ?? "";
+      .trim() ??
+    "";
 
   const combined =
     `${type} ${detail} ${comments}`;
@@ -170,21 +192,31 @@ export function getEventType(
    */
   if (type === "goal") {
     if (
-      detail.includes("missed") ||
-      detail.includes("missed penalty")
+      detail.includes(
+        "missed penalty"
+      ) ||
+      detail.includes(
+        "penalty missed"
+      )
     ) {
       return "missed_penalty";
     }
 
     if (
-      detail.includes("own goal") ||
-      detail.includes("own-goal")
+      detail.includes(
+        "own goal"
+      ) ||
+      detail.includes(
+        "own-goal"
+      )
     ) {
       return "own_goal";
     }
 
     if (
-      detail.includes("penalty")
+      detail.includes(
+        "penalty"
+      )
     ) {
       return "penalty_goal";
     }
@@ -197,22 +229,33 @@ export function getEventType(
    */
   if (type === "card") {
     if (
-      detail.includes("yellow-red") ||
-      detail.includes("second yellow")
+      detail.includes(
+        "second yellow"
+      ) ||
+      detail.includes(
+        "yellow-red"
+      ) ||
+      detail.includes(
+        "second yellow card"
+      )
     ) {
       return "second_yellow_red";
     }
 
     if (
-      detail.includes("yellow")
+      detail.includes(
+        "red"
+      )
     ) {
-      return "yellow_card";
+      return "red_card";
     }
 
     if (
-      detail.includes("red")
+      detail.includes(
+        "yellow"
+      )
     ) {
-      return "red_card";
+      return "yellow_card";
     }
 
     return "card";
@@ -233,7 +276,12 @@ export function getEventType(
    */
   if (
     type === "var" ||
-    type === "VAR"
+    combined.includes(
+      "var"
+    ) ||
+    combined.includes(
+      "video assistant"
+    )
   ) {
     return "var";
   }
@@ -242,9 +290,9 @@ export function getEventType(
    * CORNERS
    */
   if (
-    type.includes("corner") ||
-    detail.includes("corner") ||
-    comments.includes("corner")
+    combined.includes(
+      "corner"
+    )
   ) {
     return "corner";
   }
@@ -253,9 +301,9 @@ export function getEventType(
    * PENALTIES
    */
   if (
-    type.includes("penalty") ||
-    detail.includes("penalty") ||
-    comments.includes("penalty")
+    combined.includes(
+      "penalty"
+    )
   ) {
     return "penalty";
   }
@@ -264,9 +312,9 @@ export function getEventType(
    * OFFSIDES
    */
   if (
-    type.includes("offside") ||
-    detail.includes("offside") ||
-    comments.includes("offside")
+    combined.includes(
+      "offside"
+    )
   ) {
     return "offside";
   }
@@ -275,44 +323,32 @@ export function getEventType(
    * FOULS
    */
   if (
-    type.includes("foul") ||
-    detail.includes("foul") ||
-    comments.includes("foul")
+    combined.includes(
+      "foul"
+    )
   ) {
     return "foul";
   }
 
   /*
-   * Some API responses can use
-   * "incident" or another generic
-   * type with useful information in
-   * detail/comments.
+   * SHOTS / ATTACK EVENTS
    */
   if (
-    combined.includes("corner")
+    combined.includes(
+      "shot"
+    )
   ) {
-    return "corner";
+    return "shot";
   }
 
-  if (
-    combined.includes("offside")
-  ) {
-    return "offside";
-  }
-
-  if (
-    combined.includes("foul")
-  ) {
-    return "foul";
-  }
-
-  if (
-    combined.includes("penalty")
-  ) {
-    return "penalty";
-  }
-
-  return type || "unknown";
+  /*
+   * If API-Football introduces another event
+   * type, preserve it rather than throwing it away.
+   */
+  return (
+    type ||
+    "unknown"
+  );
 }
 
 export function getEventMinute(
@@ -364,7 +400,9 @@ export function getMatchStatus(
   fixture: FootballFixture
 ): string {
   return (
-    fixture.fixture?.status?.short ??
+    fixture.fixture?.status
+      ?.short
+      ?.toUpperCase() ??
     "UNKNOWN"
   );
 }
@@ -382,8 +420,11 @@ export function isMatchStarted(
     "FT",
     "AET",
     "PEN",
+    "LIVE",
   ].includes(
-    getMatchStatus(fixture)
+    getMatchStatus(
+      fixture
+    )
   );
 }
 
@@ -391,8 +432,9 @@ export function isFirstHalf(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "1H"
+    getMatchStatus(
+      fixture
+    ) === "1H"
   );
 }
 
@@ -400,8 +442,9 @@ export function isHalfTime(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "HT"
+    getMatchStatus(
+      fixture
+    ) === "HT"
   );
 }
 
@@ -417,7 +460,9 @@ export function isSecondHalf(
     "AET",
     "PEN",
   ].includes(
-    getMatchStatus(fixture)
+    getMatchStatus(
+      fixture
+    )
   );
 }
 
@@ -428,10 +473,13 @@ export function isExtraTime(
     "ET",
     "BT",
     "P",
+    "FT",
     "AET",
     "PEN",
   ].includes(
-    getMatchStatus(fixture)
+    getMatchStatus(
+      fixture
+    )
   );
 }
 
@@ -439,8 +487,9 @@ export function isExtraTimeBreak(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "BT"
+    getMatchStatus(
+      fixture
+    ) === "BT"
   );
 }
 
@@ -451,7 +500,9 @@ export function isPenaltyShootout(
     "P",
     "PEN",
   ].includes(
-    getMatchStatus(fixture)
+    getMatchStatus(
+      fixture
+    )
   );
 }
 
@@ -463,7 +514,9 @@ export function isFullTime(
     "AET",
     "PEN",
   ].includes(
-    getMatchStatus(fixture)
+    getMatchStatus(
+      fixture
+    )
   );
 }
 
@@ -471,8 +524,9 @@ export function isPostponed(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "PST"
+    getMatchStatus(
+      fixture
+    ) === "PST"
   );
 }
 
@@ -480,8 +534,9 @@ export function isCancelled(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "CANC"
+    getMatchStatus(
+      fixture
+    ) === "CANC"
   );
 }
 
@@ -489,8 +544,9 @@ export function isAbandoned(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "ABD"
+    getMatchStatus(
+      fixture
+    ) === "ABD"
   );
 }
 
@@ -498,8 +554,9 @@ export function isSuspended(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "SUSP"
+    getMatchStatus(
+      fixture
+    ) === "SUSP"
   );
 }
 
@@ -507,74 +564,14 @@ export function isInterrupted(
   fixture: FootballFixture
 ): boolean {
   return (
-    getMatchStatus(fixture) ===
-    "INT"
+    getMatchStatus(
+      fixture
+    ) === "INT"
   );
 }
 
-export function getStatusLabel(
+export function isAwarded(
   fixture: FootballFixture
-): string {
-  const status =
-    getMatchStatus(fixture);
-
-  switch (status) {
-    case "NS":
-      return "Not Started";
-
-    case "1H":
-      return "First Half";
-
-    case "HT":
-      return "Half-Time";
-
-    case "2H":
-      return "Second Half";
-
-    case "ET":
-      return "Extra Time";
-
-    case "BT":
-      return "Extra-Time Break";
-
-    case "P":
-      return "Penalties";
-
-    case "FT":
-      return "Full-Time";
-
-    case "AET":
-      return "After Extra Time";
-
-    case "PEN":
-      return "After Penalties";
-
-    case "PST":
-      return "Postponed";
-
-    case "CANC":
-      return "Cancelled";
-
-    case "ABD":
-      return "Abandoned";
-
-    case "SUSP":
-      return "Suspended";
-
-    case "INT":
-      return "Interrupted";
-
-    case "LIVE":
-      return "Live";
-
-    case "AWD":
-      return "Awarded";
-
-    case "WO":
-      return "Walkover";
-
-    default:
-      return status ||
-        "Unknown";
-  }
-    }
+): boolean {
+  return (
+    getMatchStatus(

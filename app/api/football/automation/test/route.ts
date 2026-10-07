@@ -40,7 +40,7 @@ export async function GET(
       }
     );
 
-    const competitionIds = new Set(
+    const competitionIds = new Set<number>(
       COMPETITIONS.map(
         (competition) => competition.id
       )
@@ -133,4 +133,4 @@ export async function GET(
       { status: 500 }
     );
   }
-        }
+}

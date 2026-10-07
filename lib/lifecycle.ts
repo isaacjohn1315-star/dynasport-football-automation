@@ -1,700 +1,388 @@
 import {
-  FootballEvent,
   FootballFixture,
+  FootballEvent,
   createEventKey,
-  getEventType,
-  getMatchStatus,
 } from "@/lib/events";
 
-export type LifecycleEvent = {
-  eventKey: string;
-
-  fixtureId: number;
-
-  eventType: string;
-
-  eventMinute:
-    | number
-    | null;
-
-  teamName:
-    | string
-    | null;
-
-  playerName:
-    | string
-    | null;
-
-  eventData: Record<
-    string,
-    unknown
-  >;
+function text(value: unknown): string {
+  return typeof value === "string"
+    ? value.trim()
+    : "";
 }
 
-function createStatusEvent(
-  fixture: FootballFixture,
-  statusKey: string,
+function numberOrNull(
+  value: unknown
+): number | null {
+  return typeof value === "number"
+    ? value
+    : null;
+}
+
+function makeEvent(
+  fixtureId: number,
   eventType: string,
-  minute:
-    | number
-    | null = null
-): LifecycleEvent | null {
-  const fixtureId =
-    fixture.fixture?.id;
-
-  if (
-    typeof fixtureId !==
-    "number"
-  ) {
-    return null;
-  }
-
+  index: number,
+  eventMinute: number | null,
+  eventData: Record<string, unknown>
+): FootballEvent {
   return {
-    eventKey:
-      `${fixtureId}:status:${statusKey}`,
-
-    fixtureId,
-
-    eventType,
-
-    eventMinute:
-      minute,
-
-    teamName:
-      null,
-
-    playerName:
-      null,
-
-    eventData: {
-      status:
-        fixture.fixture
-          ?.status?.short ??
-        null,
-
-      statusLong:
-        fixture.fixture
-          ?.status?.long ??
-        null,
-
-      elapsed:
-        fixture.fixture
-          ?.status?.elapsed ??
-        null,
-
-      extra:
-        fixture.fixture
-          ?.status?.extra ??
-        null,
-
-      fixtureDate:
-        fixture.fixture?.date ??
-        null,
-
-      venue:
-        fixture.fixture?.venue ??
-        null,
-
-      referee:
-        fixture.fixture?.referee ??
-        null,
-
-      competitionId:
-        fixture.league?.id ??
-        null,
-
-      competition:
-        fixture.league?.name ??
-        null,
-
-      country:
-        fixture.league?.country ??
-        null,
-
-      season:
-        fixture.league?.season ??
-        null,
-
-      round:
-        fixture.league?.round ??
-        null,
-
-      homeTeam:
-        fixture.teams?.home?.name ??
-        null,
-
-      awayTeam:
-        fixture.teams?.away?.name ??
-        null,
-
-      homeTeamId:
-        fixture.teams?.home?.id ??
-        null,
-
-      awayTeamId:
-        fixture.teams?.away?.id ??
-        null,
-
-      homeScore:
-        fixture.goals?.home ??
-        null,
-
-      awayScore:
-        fixture.goals?.away ??
-        null,
-
-      halftimeHome:
-        fixture.score?.halftime
-          ?.home ??
-        null,
-
-      halftimeAway:
-        fixture.score?.halftime
-          ?.away ??
-        null,
-
-      fulltimeHome:
-        fixture.score?.fulltime
-          ?.home ??
-        null,
-
-      fulltimeAway:
-        fixture.score?.fulltime
-          ?.away ??
-        null,
-
-      extraTimeHome:
-        fixture.score?.extratime
-          ?.home ??
-        null,
-
-      extraTimeAway:
-        fixture.score?.extratime
-          ?.away ??
-        null,
-
-      penaltyHome:
-        fixture.score?.penalty
-          ?.home ??
-        null,
-
-      penaltyAway:
-        fixture.score?.penalty
-          ?.away ??
-        null,
-    },
-  };
-}
-
-function createFixtureEvent(
-  fixture: FootballFixture,
-  event: FootballEvent
-): LifecycleEvent | null {
-  const fixtureId =
-    fixture.fixture?.id;
-
-  if (
-    typeof fixtureId !==
-    "number"
-  ) {
-    return null;
-  }
-
-  return {
-    eventKey:
-      createEventKey(
-        fixtureId,
-        event
-      ),
-
-    fixtureId,
-
-    eventType:
-      getEventType(event),
-
-    eventMinute:
-      event.time
-        ?.elapsed ??
-      null,
-
-    teamName:
-      event.team?.name ??
-      null,
-
-    playerName:
-      event.player?.name ??
-      null,
-
-    eventData: {
-      type:
-        event.type ??
-        null,
-
-      detail:
-        event.detail ??
-        null,
-
-      comments:
-        event.comments ??
-        null,
-
-      minute:
-        event.time
-          ?.elapsed ??
-        null,
-
-      extraMinute:
-        event.time
-          ?.extra ??
-        null,
-
-      team:
-        event.team ??
-        null,
-
-      player:
-        event.player ??
-        null,
-
-      assist:
-        event.assist ??
-        null,
-    },
-  };
-}
-
-function addStatusEvent(
-  lifecycle: LifecycleEvent[],
-  fixture: FootballFixture,
-  statusKey: string,
-  eventType: string,
-  minute:
-    | number
-    | null
-) {
-  const event =
-    createStatusEvent(
-      fixture,
-      statusKey,
+    eventKey: createEventKey(
+      fixtureId,
       eventType,
-      minute
-    );
-
-  if (event) {
-    lifecycle.push(event);
-  }
+      index,
+      eventData
+    ),
+    eventType,
+    eventMinute,
+    eventData,
+  };
 }
 
-export function buildLifecycleEvents(
+function fixtureTeams(
   fixture: FootballFixture
-): LifecycleEvent[] {
+) {
+  return {
+    homeTeam:
+      fixture.teams?.home?.name ?? null,
+    awayTeam:
+      fixture.teams?.away?.name ?? null,
+    homeTeamId:
+      fixture.teams?.home?.id ?? null,
+    awayTeamId:
+      fixture.teams?.away?.id ?? null,
+  };
+}
+
+export async function getLifecycleEvents(
+  fixture: FootballFixture
+): Promise<FootballEvent[]> {
   const fixtureId =
     fixture.fixture?.id;
 
   if (
-    typeof fixtureId !==
-    "number"
+    typeof fixtureId !== "number"
   ) {
     return [];
   }
 
+  const events: FootballEvent[] = [];
+
   const status =
-    getMatchStatus(
-      fixture
+    text(
+      fixture.fixture?.status?.short
+    ).toUpperCase();
+
+  const statusLong =
+    text(
+      fixture.fixture?.status?.long
     );
 
-  const lifecycle: LifecycleEvent[] =
-    [];
+  const elapsed =
+    numberOrNull(
+      fixture.fixture?.status?.elapsed
+    );
+
+  const extra =
+    numberOrNull(
+      fixture.fixture?.status?.extra
+    );
+
+  const teams =
+    fixtureTeams(fixture);
 
   /*
-   * ----------------------------------------------------------
-   * MATCH START
-   * ----------------------------------------------------------
-   *
-   * If the first poll sees HT/2H/FT/etc., we can still
-   * reconstruct the earlier lifecycle markers.
+   * Every API-Football event is processed individually.
+   * We deliberately do not collapse multiple events occurring
+   * during the same minute.
    */
   if (
-    [
-      "1H",
-      "HT",
-      "2H",
-      "ET",
-      "BT",
-      "P",
-      "FT",
-      "AET",
-      "PEN",
-    ].includes(status)
+    Array.isArray(fixture.events)
   ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "started",
-      "match_started",
-      1
-    );
-  }
+    fixture.events.forEach(
+      (rawEvent, index) => {
+        const type =
+          text(rawEvent.type)
+            .toLowerCase();
 
-  /*
-   * FIRST HALF
-   */
-  if (
-    [
-      "1H",
-      "HT",
-      "2H",
-      "ET",
-      "BT",
-      "P",
-      "FT",
-      "AET",
-      "PEN",
-    ].includes(status)
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "first_half",
-      "first_half_started",
-      1
-    );
-  }
+        const detail =
+          text(rawEvent.detail);
 
-  /*
-   * HALF-TIME
-   */
-  if (
-    [
-      "HT",
-      "2H",
-      "ET",
-      "BT",
-      "P",
-      "FT",
-      "AET",
-      "PEN",
-    ].includes(status)
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "half_time",
-      "half_time",
-      45
-    );
-  }
+        const minute =
+          numberOrNull(
+            rawEvent.time?.elapsed
+          );
 
-  /*
-   * SECOND HALF
-   */
-  if (
-    [
-      "2H",
-      "ET",
-      "BT",
-      "P",
-      "FT",
-      "AET",
-      "PEN",
-    ].includes(status)
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "second_half",
-      "second_half_started",
-      46
-    );
-  }
+        const eventExtra =
+          numberOrNull(
+            rawEvent.time?.extra
+          );
 
-  /*
-   * EXTRA TIME
-   */
-  if (
-    [
-      "ET",
-      "BT",
-      "P",
-      "AET",
-      "PEN",
-    ].includes(status)
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "extra_time",
-      "extra_time_started",
-      91
-    );
-  }
+        const eventType =
+          `${type || "event"}_${(
+            detail || "update"
+          )
+            .toLowerCase()
+            .replace(
+              /[^a-z0-9]+/g,
+              "_"
+            )
+            .replace(
+              /^_|_$/g,
+              ""
+            )}`;
 
-  /*
-   * EXTRA-TIME BREAK
-   */
-  if (
-    status === "BT"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "extra_time_break",
-      "extra_time_break",
-      null
-    );
-  }
+        events.push(
+          makeEvent(
+            fixtureId,
+            eventType,
+            index,
+            minute,
+            {
+              ...teams,
 
-  /*
-   * PENALTY SHOOTOUT
-   */
-  if (
-    [
-      "P",
-      "PEN",
-    ].includes(status)
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "penalties",
-      "penalties_started",
-      null
-    );
-  }
+              minute,
+              extra:
+                eventExtra,
 
-  /*
-   * FULL TIME
-   */
-  if (
-    [
-      "FT",
-      "AET",
-      "PEN",
-    ].includes(status)
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "full_time",
-      "full_time",
-      fixture.fixture
-        ?.status?.elapsed ??
-        null
-    );
-  }
+              type:
+                rawEvent.type ??
+                null,
 
-  /*
-   * POSTPONED
-   */
-  if (
-    status === "PST"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "postponed",
-      "match_postponed",
-      null
-    );
-  }
+              detail:
+                rawEvent.detail ??
+                null,
 
-  /*
-   * CANCELLED
-   */
-  if (
-    status === "CANC"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "cancelled",
-      "match_cancelled",
-      null
-    );
-  }
+              comments:
+                rawEvent.comments ??
+                null,
 
-  /*
-   * ABANDONED
-   */
-  if (
-    status === "ABD"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "abandoned",
-      "match_abandoned",
-      fixture.fixture
-        ?.status?.elapsed ??
-        null
-    );
-  }
+              teamId:
+                rawEvent.team?.id ??
+                null,
 
-  /*
-   * SUSPENDED
-   */
-  if (
-    status === "SUSP"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "suspended",
-      "match_suspended",
-      fixture.fixture
-        ?.status?.elapsed ??
-        null
-    );
-  }
+              teamName:
+                rawEvent.team?.name ??
+                null,
 
-  /*
-   * INTERRUPTED
-   */
-  if (
-    status === "INT"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "interrupted",
-      "match_interrupted",
-      fixture.fixture
-        ?.status?.elapsed ??
-        null
-    );
-  }
+              playerId:
+                rawEvent.player?.id ??
+                null,
 
-  /*
-   * AWARDED
-   */
-  if (
-    status === "AWD"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "awarded",
-      "match_awarded",
-      null
-    );
-  }
+              playerName:
+                rawEvent.player?.name ??
+                null,
 
-  /*
-   * WALKOVER
-   */
-  if (
-    status === "WO"
-  ) {
-    addStatusEvent(
-      lifecycle,
-      fixture,
-      "walkover",
-      "match_walkover",
-      null
-    );
-  }
+              assistId:
+                rawEvent.assist?.id ??
+                null,
 
-  /*
-   * ----------------------------------------------------------
-   * INDIVIDUAL API-FOOTBALL EVENTS
-   * ----------------------------------------------------------
-   *
-   * Every event is processed independently.
-   *
-   * Therefore:
-   *
-   * Goal
-   * Yellow card
-   * Substitution
-   * Corner
-   *
-   * can all be detected during the same 15-minute poll.
-   */
-  const fixtureEvents =
-    Array.isArray(
-      fixture.events
-    )
-      ? fixture.events
-      : [];
-
-  for (
-    const event of fixtureEvents
-  ) {
-    const normalized =
-      createFixtureEvent(
-        fixture,
-        event
-      );
-
-    if (normalized) {
-      lifecycle.push(
-        normalized
-      );
-    }
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * DEDUPLICATION
-   * ----------------------------------------------------------
-   *
-   * The event key is generated before this stage.
-   *
-   * Multiple copies of the same event in an API response
-   * therefore collapse into one event.
-   */
-  const uniqueEvents =
-    new Map<
-      string,
-      LifecycleEvent
-    >();
-
-  for (
-    const event of lifecycle
-  ) {
-    if (
-      !uniqueEvents.has(
-        event.eventKey
-      )
-    ) {
-      uniqueEvents.set(
-        event.eventKey,
-        event
-      );
-    }
-  }
-
-  /*
-   * Sort chronologically where possible.
-   *
-   * This is particularly important when one Cron run discovers
-   * several events that happened since the previous check.
-   */
-  return Array.from(
-    uniqueEvents.values()
-  ).sort(
-    (a, b) => {
-      const minuteA =
-        a.eventMinute ??
-        9999;
-
-      const minuteB =
-        b.eventMinute ??
-        9999;
-
-      if (
-        minuteA !==
-        minuteB
-      ) {
-        return (
-          minuteA -
-          minuteB
+              assistName:
+                rawEvent.assist?.name ??
+                null,
+            }
+          )
         );
       }
+    );
+  }
 
-      return a.eventKey.localeCompare(
-        b.eventKey
-      );
-    }
-  );
-      }
+  /*
+   * Important match-status lifecycle events.
+   * The database event key prevents these from being posted twice.
+   */
+
+  const lifecycleMap: Record<
+    string,
+    string
+  > = {
+    NS: "match_scheduled",
+    TBD: "match_time_to_be_determined",
+    LIVE: "match_live",
+    HT: "half_time",
+    ET: "extra_time",
+    BT: "extra_time_break",
+    P: "penalty_shootout",
+    FT: "full_time",
+    AET: "after_extra_time",
+    PEN: "penalty_shootout_finished",
+    PST: "match_postponed",
+    CANC: "match_cancelled",
+    ABD: "match_abandoned",
+    SUSP: "match_suspended",
+    INT: "match_interrupted",
+    AWD: "match_awarded",
+    WO: "match_walkover",
+  };
+
+  const lifecycleType =
+    lifecycleMap[status];
+
+  if (lifecycleType) {
+    events.push(
+      makeEvent(
+        fixtureId,
+        lifecycleType,
+        0,
+        elapsed,
+        {
+          ...teams,
+
+          status,
+          statusLong,
+          elapsed,
+          extra,
+
+          homeScore:
+            fixture.goals?.home ??
+            null,
+
+          awayScore:
+            fixture.goals?.away ??
+            null,
+
+          halftimeHome:
+            fixture.score?.halftime
+              ?.home ??
+            null,
+
+          halftimeAway:
+            fixture.score?.halftime
+              ?.away ??
+            null,
+
+          fulltimeHome:
+            fixture.score?.fulltime
+              ?.home ??
+            null,
+
+          fulltimeAway:
+            fixture.score?.fulltime
+              ?.away ??
+            null,
+
+          extraTimeHome:
+            fixture.score?.extratime
+              ?.home ??
+            null,
+
+          extraTimeAway:
+            fixture.score?.extratime
+              ?.away ??
+            null,
+
+          penaltyHome:
+            fixture.score?.penalty
+              ?.home ??
+            null,
+
+          penaltyAway:
+            fixture.score?.penalty
+              ?.away ??
+            null,
+        }
+      )
+    );
+  }
+
+  /*
+   * Starting XI / lineup availability.
+   * This is emitted when API-Football provides lineups.
+   */
+  if (
+    Array.isArray(
+      fixture.lineups
+    ) &&
+    fixture.lineups.length > 0
+  ) {
+    events.push(
+      makeEvent(
+        fixtureId,
+        "starting_lineups_available",
+        0,
+        elapsed,
+        {
+          ...teams,
+          lineupCount:
+            fixture.lineups.length,
+        }
+      )
+    );
+  }
+
+  /*
+   * Score-state snapshots provide a fallback for important
+   * score changes even when an individual event is unavailable.
+   */
+  const homeScore =
+    numberOrNull(
+      fixture.goals?.home
+    );
+
+  const awayScore =
+    numberOrNull(
+      fixture.goals?.away
+    );
+
+  if (
+    homeScore !== null ||
+    awayScore !== null
+  ) {
+    events.push(
+      makeEvent(
+        fixtureId,
+        "score_update",
+        elapsed ?? 0,
+        elapsed,
+        {
+          ...teams,
+          minute: elapsed,
+
+          homeScore,
+          awayScore,
+
+          halftimeHome:
+            fixture.score?.halftime
+              ?.home ??
+            null,
+
+          halftimeAway:
+            fixture.score?.halftime
+              ?.away ??
+            null,
+
+          fulltimeHome:
+            fixture.score?.fulltime
+              ?.home ??
+            null,
+
+          fulltimeAway:
+            fixture.score?.fulltime
+              ?.away ??
+            null,
+
+          extraTimeHome:
+            fixture.score?.extratime
+              ?.home ??
+            null,
+
+          extraTimeAway:
+            fixture.score?.extratime
+              ?.away ??
+            null,
+
+          penaltyHome:
+            fixture.score?.penalty
+              ?.home ??
+            null,
+
+          penaltyAway:
+            fixture.score?.penalty
+              ?.away ??
+            null,
+        }
+      )
+    );
+  }
+
+  return events;
+          }

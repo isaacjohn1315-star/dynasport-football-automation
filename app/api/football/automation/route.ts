@@ -1,130 +1,407 @@
-import { NextRequest, NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-import { footballApiRequest } from "@/lib/football-api";
-import { COMPETITIONS } from "@/lib/competitions";
+import {
+  footballApiRequest,
+} from "@/lib/football-api";
+
+import {
+  COMPETITION_IDS,
+} from "@/lib/competitions";
+
+import {
+  FootballFixture,
+} from "@/lib/events";
+
 import {
   getNewEvents,
   markEventAsPosted,
 } from "@/lib/event-processor";
-import { createFacebookMessage } from "@/lib/messages";
-import { postToFacebook } from "@/lib/facebook";
-import { FootballFixture } from "@/lib/events";
+
+import {
+  postToFacebook,
+} from "@/lib/facebook";
+
+import {
+  buildFacebookMessage,
+} from "@/lib/messages";
+
+function isAuthorized(
+  request: NextRequest
+): boolean {
+  const expectedSecret =
+    process.env.CRON_SECRET;
+
+  if (!expectedSecret) {
+    return false;
+  }
+
+  const authorization =
+    request.headers.get(
+      "authorization"
+    );
+
+  if (!authorization) {
+    return false;
+  }
+
+  return (
+    authorization ===
+    `Bearer ${expectedSecret}`
+  );
+}
+
+function normalizeFixtures(
+  data: unknown
+): FootballFixture[] {
+  if (
+    !data ||
+    typeof data !== "object"
+  ) {
+    return [];
+  }
+
+  if (
+    !("response" in data)
+  ) {
+    return [];
+  }
+
+  const response =
+    (data as {
+      response?: unknown;
+    }).response;
+
+  if (
+    !Array.isArray(response)
+  ) {
+    return [];
+  }
+
+  return response as FootballFixture[];
+}
+
+function isTrackedCompetition(
+  fixture: FootballFixture
+): boolean {
+  const leagueId =
+    fixture.league?.id;
+
+  if (
+    typeof leagueId !== "number"
+  ) {
+    return false;
+  }
+
+  return COMPETITION_IDS.has(
+    leagueId
+  );
+}
+
+function addCompetitionData(
+  fixture: FootballFixture,
+  event: Awaited<
+    ReturnType<typeof getNewEvents>
+  >[number]
+) {
+  const competition =
+    fixture.league?.name;
+
+  if (
+    competition
+  ) {
+    event.eventData.competition =
+      competition;
+  }
+
+  const country =
+    fixture.league?.country;
+
+  if (
+    country
+  ) {
+    event.eventData.country =
+      country;
+  }
+
+  const season =
+    fixture.league?.season;
+
+  if (
+    typeof season === "number"
+  ) {
+    event.eventData.season =
+      season;
+  }
+
+  event.eventData.homeTeam =
+    fixture.teams?.home?.name ??
+    null;
+
+  event.eventData.awayTeam =
+    fixture.teams?.away?.name ??
+    null;
+
+  event.eventData.homeScore =
+    fixture.goals?.home ??
+    null;
+
+  event.eventData.awayScore =
+    fixture.goals?.away ??
+    null;
+}
 
 export async function GET(
   request: NextRequest
 ) {
-  try {
-    const cronSecret =
-      process.env.CRON_SECRET;
+  const startedAt =
+    Date.now();
 
-    if (!cronSecret) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "CRON_SECRET is not configured",
-        },
-        { status: 500 }
-      );
-    }
-
-    const authorization =
-      request.headers.get("authorization");
-
-    const providedSecret =
-      authorization?.startsWith("Bearer ")
-        ? authorization.slice(7)
-        : null;
-
-    if (providedSecret !== cronSecret) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Unauthorized",
-        },
-        { status: 401 }
-      );
-    }
-
-    const data = await footballApiRequest(
-      "/fixtures",
+  if (
+    !isAuthorized(request)
+  ) {
+    return NextResponse.json(
       {
-        live: "all",
+        success: false,
+        error: "Unauthorized",
+      },
+      {
+        status: 401,
       }
     );
+  }
 
-    const competitionIds = new Set<number>(
-      COMPETITIONS.map(
-        (competition) => competition.id
-      )
-    );
+  try {
+    /*
+     * IMPORTANT:
+     *
+     * This is deliberately the only
+     * Football API request made by
+     * the normal automation run.
+     *
+     * With a 15-minute external cron:
+     *
+     * 4 requests/hour
+     * × 24 hours
+     * = 96 requests/day
+     *
+     * That keeps us inside the
+     * API-Football free limit of
+     * 100 requests/day.
+     */
+    const data =
+      await footballApiRequest(
+        "/fixtures",
+        {
+          live: "all",
+        }
+      );
 
-    const fixtures: FootballFixture[] =
-      Array.isArray(data.response)
-        ? data.response.filter(
-            (fixture: FootballFixture) =>
-              competitionIds.has(
-                fixture.league?.id ?? 0
-              )
-          )
-        : [];
+    const fixtures =
+      normalizeFixtures(data);
 
-    const results = [];
+    const trackedFixtures =
+      fixtures.filter(
+        isTrackedCompetition
+      );
 
-    for (const fixture of fixtures) {
+    let fixturesChecked = 0;
+    let eventsDetected = 0;
+    let eventsPosted = 0;
+    let eventsAlreadyPosted = 0;
+    let facebookFailures = 0;
+
+    const results: Array<{
+      fixtureId: number;
+      home: string;
+      away: string;
+      competition: string;
+      status: string;
+      newEvents: number;
+      postedEvents: number;
+    }> = [];
+
+    for (
+      const fixture of trackedFixtures
+    ) {
+      const fixtureId =
+        fixture.fixture?.id;
+
+      if (
+        typeof fixtureId !== "number"
+      ) {
+        continue;
+      }
+
+      fixturesChecked++;
+
+      const home =
+        fixture.teams?.home?.name ??
+        "Home";
+
+      const away =
+        fixture.teams?.away?.name ??
+        "Away";
+
+      const competition =
+        fixture.league?.name ??
+        "Unknown competition";
+
+      const status =
+        fixture.fixture?.status?.short ??
+        "UNKNOWN";
+
       const newEvents =
-        await getNewEvents(fixture);
+        await getNewEvents(
+          fixture
+        );
 
-      for (const event of newEvents) {
+      eventsDetected +=
+        newEvents.length;
+
+      let postedForFixture = 0;
+
+      /*
+       * Every event is processed
+       * individually.
+       *
+       * We deliberately do NOT collapse
+       * multiple events into one post.
+       *
+       * Example:
+       *
+       * 67' Goal
+       * 68' Yellow card
+       * 69' Substitution
+       *
+       * becomes three separately
+       * tracked events and three
+       * separate Facebook posts.
+       */
+      for (
+        const event of newEvents
+      ) {
+        addCompetitionData(
+          fixture,
+          event
+        );
+
         const message =
-          createFacebookMessage(
-            fixture,
+          buildFacebookMessage(
             event
           );
 
         const facebookResult =
-          await postToFacebook(message);
+          await postToFacebook(
+            message
+          );
 
-        if (!facebookResult.success) {
-          results.push({
-            fixtureId: event.fixtureId,
-            eventType: event.eventType,
-            success: false,
-            error: facebookResult.error,
-          });
+        if (
+          facebookResult.success
+        ) {
+          const saved =
+            await markEventAsPosted(
+              event
+            );
 
-          continue;
+          if (saved) {
+            eventsPosted++;
+            postedForFixture++;
+          } else {
+            /*
+             * This means another
+             * automation invocation
+             * already claimed the
+             * same event.
+             */
+            eventsAlreadyPosted++;
+          }
+        } else {
+          /*
+           * Important:
+           *
+           * We do NOT mark the event
+           * as posted when Facebook
+           * fails.
+           *
+           * The next cron run can
+           * therefore retry it.
+           */
+          facebookFailures++;
         }
-
-        const saved =
-          await markEventAsPosted(event);
-
-        results.push({
-          fixtureId: event.fixtureId,
-          eventType: event.eventType,
-          success: saved,
-          postId:
-            facebookResult.postId ?? null,
-        });
       }
+
+      results.push({
+        fixtureId,
+        home,
+        away,
+        competition,
+        status,
+        newEvents:
+          newEvents.length,
+        postedEvents:
+          postedForFixture,
+      });
     }
+
+    const duration =
+      Date.now() -
+      startedAt;
 
     return NextResponse.json({
       success: true,
-      fixturesChecked: fixtures.length,
-      eventsProcessed: results.length,
+
+      service:
+        "DynaSport Football Automation",
+
+      message:
+        "Automation run completed",
+
+      apiRequest:
+        "fixtures?live=all",
+
+      fixturesReturned:
+        fixtures.length,
+
+      trackedFixtures:
+        trackedFixtures.length,
+
+      fixturesChecked,
+
+      eventsDetected,
+
+      eventsPosted,
+
+      eventsAlreadyPosted,
+
+      facebookFailures,
+
+      durationMs:
+        duration,
+
+      timestamp:
+        new Date().toISOString(),
+
       results,
-      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     return NextResponse.json(
       {
         success: false,
+
         error:
           error instanceof Error
             ? error.message
-            : "Unknown error",
+            : "Unknown automation error",
+
+        timestamp:
+          new Date().toISOString(),
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
-        }
+    }

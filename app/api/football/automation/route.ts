@@ -5,10 +5,12 @@ import {
 
 import {
   footballApiRequest,
+  getLiveFixtures,
 } from "@/lib/football-api";
 
 import {
-  COMPETITION_IDS,
+  createCompetition,
+  isTrackedCompetition,
 } from "@/lib/competitions";
 
 import {
@@ -25,7 +27,7 @@ import {
 } from "@/lib/facebook";
 
 import {
-  buildFacebookMessage,
+  createFacebookMessage,
 } from "@/lib/messages";
 
 function isAuthorized(
@@ -52,98 +54,142 @@ function isAuthorized(
 function normalizeFixtures(
   data: unknown
 ): FootballFixture[] {
-  if (
-    !data ||
-    typeof data !== "object" ||
-    !("response" in data)
-  ) {
-    return [];
-  }
-
-  const response =
-    (data as {
-      response?: unknown;
-    }).response;
-
-  if (
-    !Array.isArray(response)
-  ) {
-    return [];
-  }
-
-  return response as FootballFixture[];
-}
-
-function isTrackedCompetition(
-  fixture: FootballFixture
-): boolean {
-  const leagueId =
-    fixture.league?.id;
-
-  return (
-    typeof leagueId === "number" &&
-    COMPETITION_IDS.has(
-      leagueId
-    )
+  return getLiveFixtures<FootballFixture>(
+    data
   );
 }
 
-function enrichEvent(
+function enrichEventData(
   fixture: FootballFixture,
-  event: Awaited<
-    ReturnType<typeof getNewEvents>
-  >[number]
-) {
-  event.eventData.competition =
-    fixture.league?.name ??
-    null;
+  eventData: Record<
+    string,
+    unknown
+  >
+): Record<string, unknown> {
+  const competition =
+    createCompetition(
+      fixture.league
+    );
 
-  event.eventData.country =
-    fixture.league?.country ??
-    null;
+  return {
+    ...eventData,
 
-  event.eventData.season =
-    fixture.league?.season ??
-    null;
+    competitionId:
+      fixture.league?.id ??
+      null,
 
-  event.eventData.homeTeam =
-    fixture.teams?.home?.name ??
-    null;
+    competition:
+      competition?.name ??
+      fixture.league?.name ??
+      null,
 
-  event.eventData.awayTeam =
-    fixture.teams?.away?.name ??
-    null;
+    country:
+      competition?.country ??
+      fixture.league?.country ??
+      null,
 
-  event.eventData.homeScore =
-    fixture.goals?.home ??
-    null;
+    competitionPriority:
+      competition?.priority ??
+      "other",
 
-  event.eventData.awayScore =
-    fixture.goals?.away ??
-    null;
+    season:
+      fixture.league?.season ??
+      null,
 
-  event.eventData.fixtureDate =
-    fixture.fixture?.date ??
-    null;
+    fixtureDate:
+      fixture.fixture?.date ??
+      null,
 
-  event.eventData.matchStatus =
-    fixture.fixture?.status?.short ??
-    null;
+    fixtureStatus:
+      fixture.fixture?.status
+        ?.short ??
+      null,
 
-  event.eventData.matchStatusLong =
-    fixture.fixture?.status?.long ??
-    null;
+    fixtureStatusLong:
+      fixture.fixture?.status
+        ?.long ??
+      null,
+
+    fixtureElapsed:
+      fixture.fixture?.status
+        ?.elapsed ??
+      null,
+
+    fixtureExtra:
+      fixture.fixture?.status
+        ?.extra ??
+      null,
+
+    homeTeam:
+      fixture.teams?.home?.name ??
+      null,
+
+    awayTeam:
+      fixture.teams?.away?.name ??
+      null,
+
+    homeTeamId:
+      fixture.teams?.home?.id ??
+      null,
+
+    awayTeamId:
+      fixture.teams?.away?.id ??
+      null,
+
+    homeScore:
+      fixture.goals?.home ??
+      null,
+
+    awayScore:
+      fixture.goals?.away ??
+      null,
+
+    halftimeHome:
+      fixture.score?.halftime
+        ?.home ??
+      null,
+
+    halftimeAway:
+      fixture.score?.halftime
+        ?.away ??
+      null,
+
+    fulltimeHome:
+      fixture.score?.fulltime
+        ?.home ??
+      null,
+
+    fulltimeAway:
+      fixture.score?.fulltime
+        ?.away ??
+      null,
+
+    extraTimeHome:
+      fixture.score?.extratime
+        ?.home ??
+      null,
+
+    extraTimeAway:
+      fixture.score?.extratime
+        ?.away ??
+      null,
+
+    penaltyHome:
+      fixture.score?.penalty
+        ?.home ??
+      null,
+
+    penaltyAway:
+      fixture.score?.penalty
+        ?.away ??
+      null,
+  };
 }
 
 export async function GET(
   request: NextRequest
 ) {
-  const startedAt =
-    Date.now();
-
-  if (
-    !isAuthorized(request)
-  ) {
+  if (!isAuthorized(request)) {
     return NextResponse.json(
       {
         success: false,
@@ -155,17 +201,15 @@ export async function GET(
     );
   }
 
+  const startedAt =
+    new Date();
+
   try {
     /*
-     * ONE API-FOOTBALL REQUEST ONLY.
+     * ONE API request per Cron run.
      *
-     * At a 15-minute Cron interval:
-     *
-     * 4 requests/hour × 24 hours
-     * = 96 requests/day.
-     *
-     * This preserves the free-plan
-     * quota buffer.
+     * This is important because the free API-Football
+     * plan has a limited daily request allowance.
      */
     const data =
       await footballApiRequest(
@@ -178,29 +222,33 @@ export async function GET(
     const fixtures =
       normalizeFixtures(data);
 
+    /*
+     * ALL COMPETITIONS MODE
+     *
+     * We only reject malformed fixtures.
+     *
+     * We do NOT check a hard-coded competition ID list.
+     */
     const trackedFixtures =
       fixtures.filter(
-        isTrackedCompetition
+        (fixture) =>
+          isTrackedCompetition(
+            fixture.league?.id
+          )
       );
 
-    let fixturesChecked = 0;
-    let eventsDetected = 0;
-    let eventsPosted = 0;
-    let eventsAlreadyHandled = 0;
+    let discoveredEvents = 0;
+    let newEvents = 0;
+    let facebookPosts = 0;
     let facebookFailures = 0;
 
-    const results: Array<{
-      fixtureId: number;
-      competition: string;
-      home: string;
-      away: string;
-      status: string;
-      score: string;
-      newEvents: number;
-      postedEvents: number;
-      failedEvents: number;
-    }> = [];
+    const results: Array<
+      Record<string, unknown>
+    > = [];
 
+    /*
+     * Process every live fixture independently.
+     */
     for (
       const fixture of trackedFixtures
     ) {
@@ -208,74 +256,132 @@ export async function GET(
         fixture.fixture?.id;
 
       if (
-        typeof fixtureId !== "number"
+        typeof fixtureId !==
+        "number"
       ) {
         continue;
       }
 
-      fixturesChecked++;
-
-      const home =
-        fixture.teams?.home?.name ??
-        "Home";
-
-      const away =
-        fixture.teams?.away?.name ??
-        "Away";
-
       const competition =
-        fixture.league?.name ??
-        "Unknown competition";
+        createCompetition(
+          fixture.league
+        );
 
-      const status =
-        fixture.fixture?.status?.short ??
-        "UNKNOWN";
-
-      const homeScore =
-        fixture.goals?.home ??
-        0;
-
-      const awayScore =
-        fixture.goals?.away ??
-        0;
-
-      const newEvents =
+      /*
+       * Get events that have not already been
+       * successfully posted.
+       */
+      const lifecycleEvents =
         await getNewEvents(
           fixture
         );
 
-      eventsDetected +=
-        newEvents.length;
+      discoveredEvents +=
+        lifecycleEvents.length;
 
-      let postedForFixture = 0;
-      let failedForFixture = 0;
+      if (
+        lifecycleEvents.length ===
+        0
+      ) {
+        continue;
+      }
+
+      newEvents +=
+        lifecycleEvents.length;
 
       /*
-       * Every event remains independent.
+       * IMPORTANT:
        *
-       * We do not combine:
+       * Every event is handled individually.
        *
-       * Goal + card + substitution
-       *
-       * into one Facebook post.
+       * If five events happened between Cron runs,
+       * this loop can create five separate Facebook
+       * posts instead of combining them.
        */
       for (
-        const event of newEvents
+        const event of lifecycleEvents
       ) {
-        enrichEvent(
-          fixture,
-          event
-        );
-
-        const message =
-          buildFacebookMessage(
-            event
+        const enrichedEventData =
+          enrichEventData(
+            fixture,
+            event.eventData
           );
 
+        const enrichedEvent = {
+          ...event,
+
+          eventData:
+            enrichedEventData,
+        };
+
+        let message: string;
+
+        try {
+          /*
+           * messages.ts is responsible for turning
+           * the lifecycle event into human Facebook copy.
+           */
+          message =
+            createFacebookMessage(
+              enrichedEvent
+            );
+        } catch (error) {
+          results.push({
+            fixtureId,
+            competition:
+              competition?.name ??
+              fixture.league
+                ?.name ??
+              null,
+            eventKey:
+              event.eventKey,
+            eventType:
+              event.eventType,
+            success: false,
+            stage:
+              "message_generation",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unknown message generation error",
+          });
+
+          continue;
+        }
+
+        if (
+          !message ||
+          !message.trim()
+        ) {
+          results.push({
+            fixtureId,
+            competition:
+              competition?.name ??
+              fixture.league
+                ?.name ??
+              null,
+            eventKey:
+              event.eventKey,
+            eventType:
+              event.eventType,
+            success: false,
+            stage:
+              "message_generation",
+            error:
+              "Generated Facebook message is empty",
+          });
+
+          continue;
+        }
+
         /*
-         * Facebook receives the exact
-         * human-style message generated
-         * for this individual event.
+         * Post FIRST.
+         *
+         * We deliberately do not mark the event as posted
+         * until Facebook confirms success.
+         *
+         * This gives failed posts another chance on
+         * the next Cron run.
          */
         const facebookResult =
           await postToFacebook(
@@ -286,73 +392,144 @@ export async function GET(
           !facebookResult.success
         ) {
           facebookFailures++;
-          failedForFixture++;
 
-          /*
-           * Do NOT mark failed events
-           * as posted.
-           *
-           * The next Cron run can retry.
-           */
+          results.push({
+            fixtureId,
+
+            competition:
+              competition?.name ??
+              fixture.league
+                ?.name ??
+              null,
+
+            country:
+              competition?.country ??
+              fixture.league
+                ?.country ??
+              null,
+
+            eventKey:
+              event.eventKey,
+
+            eventType:
+              event.eventType,
+
+            minute:
+              event.eventMinute,
+
+            success: false,
+
+            stage:
+              "facebook",
+
+            error:
+              facebookResult.error ??
+              "Facebook post failed",
+          });
+
           continue;
         }
 
         /*
-         * Only after Facebook accepts
-         * the post do we record the
-         * event as successfully handled.
+         * Facebook succeeded.
+         *
+         * Only NOW record the event in Neon.
          */
-        const saved =
+        const marked =
           await markEventAsPosted(
-            event
+            enrichedEvent
           );
 
-        if (saved) {
-          eventsPosted++;
-          postedForFixture++;
-        } else {
+        if (!marked) {
           /*
-           * Another invocation may have
-           * already recorded this exact
-           * event.
+           * The event may have been inserted by
+           * another simultaneous worker.
+           *
+           * Facebook has already received the post,
+           * so we report the database conflict rather
+           * than trying to publish it again.
            */
-          eventsAlreadyHandled++;
+          results.push({
+            fixtureId,
+
+            competition:
+              competition?.name ??
+              fixture.league
+                ?.name ??
+              null,
+
+            eventKey:
+              event.eventKey,
+
+            eventType:
+              event.eventType,
+
+            success: true,
+
+            stage:
+              "database_conflict",
+
+            facebookPostId:
+              facebookResult.postId ??
+              null,
+
+            warning:
+              "Facebook post succeeded but event was already recorded",
+          });
+
+          continue;
         }
+
+        facebookPosts++;
+
+        results.push({
+          fixtureId,
+
+          competition:
+            competition?.name ??
+            fixture.league
+              ?.name ??
+            null,
+
+          country:
+            competition?.country ??
+            fixture.league
+              ?.country ??
+            null,
+
+          season:
+            fixture.league?.season ??
+            null,
+
+          eventKey:
+            event.eventKey,
+
+          eventType:
+            event.eventType,
+
+          minute:
+            event.eventMinute,
+
+          success: true,
+
+          stage:
+            "completed",
+
+          facebookPostId:
+            facebookResult.postId ??
+            null,
+        });
       }
-
-      results.push({
-        fixtureId,
-
-        competition,
-
-        home,
-
-        away,
-
-        status,
-
-        score:
-          `${homeScore}-${awayScore}`,
-
-        newEvents:
-          newEvents.length,
-
-        postedEvents:
-          postedForFixture,
-
-        failedEvents:
-          failedForFixture,
-      });
     }
+
+    const finishedAt =
+      new Date();
 
     return NextResponse.json({
       success: true,
 
-      service:
-        "DynaSport Football Automation",
-
-      message:
-        "Automation run completed",
+      mode:
+        "all_competitions",
 
       apiRequest:
         "fixtures?live=all",
@@ -360,27 +537,27 @@ export async function GET(
       fixturesReturned:
         fixtures.length,
 
-      trackedFixtures:
+      validFixtures:
         trackedFixtures.length,
 
-      fixturesChecked,
+      discoveredEvents,
 
-      eventsDetected,
+      newEvents,
 
-      eventsPosted,
-
-      eventsAlreadyHandled,
+      facebookPosts,
 
       facebookFailures,
 
-      durationMs:
-        Date.now() -
-        startedAt,
+      startedAt:
+        startedAt.toISOString(),
+
+      finishedAt:
+        finishedAt.toISOString(),
 
       results,
 
       timestamp:
-        new Date().toISOString(),
+        finishedAt.toISOString(),
     });
   } catch (error) {
     return NextResponse.json(
@@ -392,10 +569,6 @@ export async function GET(
             ? error.message
             : "Unknown automation error",
 
-        durationMs:
-          Date.now() -
-          startedAt,
-
         timestamp:
           new Date().toISOString(),
       },
@@ -404,4 +577,4 @@ export async function GET(
       }
     );
   }
-        }
+    }

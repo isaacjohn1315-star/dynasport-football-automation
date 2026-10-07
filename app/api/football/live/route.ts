@@ -5,10 +5,12 @@ import {
 
 import {
   footballApiRequest,
+  getLiveFixtures,
 } from "@/lib/football-api";
 
 import {
-  COMPETITION_IDS,
+  createCompetition,
+  isTrackedCompetition,
 } from "@/lib/competitions";
 
 import {
@@ -30,10 +32,6 @@ function isAuthorized(
       "authorization"
     );
 
-  if (!authorization) {
-    return false;
-  }
-
   return (
     authorization ===
     `Bearer ${expectedSecret}`
@@ -43,30 +41,15 @@ function isAuthorized(
 function normalizeFixtures(
   data: unknown
 ): FootballFixture[] {
-  if (
-    !data ||
-    typeof data !== "object" ||
-    !("response" in data)
-  ) {
-    return [];
-  }
-
-  const response =
-    (data as {
-      response?: unknown;
-    }).response;
-
-  return Array.isArray(response)
-    ? (response as FootballFixture[])
-    : [];
+  return getLiveFixtures<FootballFixture>(
+    data
+  );
 }
 
 export async function GET(
   request: NextRequest
 ) {
-  if (
-    !isAuthorized(request)
-  ) {
+  if (!isAuthorized(request)) {
     return NextResponse.json(
       {
         success: false,
@@ -80,14 +63,12 @@ export async function GET(
 
   try {
     /*
-     * This is intentionally a single
-     * API-Football request.
+     * IMPORTANT:
      *
-     * Do not add another fixture,
-     * event, lineup, statistics, or
-     * fixture-detail request here.
+     * This is intentionally ONE API request.
      *
-     * The free API quota is limited.
+     * It retrieves live fixtures from ALL competitions
+     * covered by API-Football.
      */
     const data =
       await footballApiRequest(
@@ -100,87 +81,155 @@ export async function GET(
     const fixtures =
       normalizeFixtures(data);
 
+    /*
+     * Only discard malformed fixtures that do not
+     * contain a valid competition ID.
+     *
+     * We do NOT maintain a competition whitelist.
+     */
     const trackedFixtures =
       fixtures.filter(
-        (fixture) => {
-          const leagueId =
-            fixture.league?.id;
-
-          return (
-            typeof leagueId === "number" &&
-            COMPETITION_IDS.has(
-              leagueId
-            )
-          );
-        }
+        (fixture) =>
+          isTrackedCompetition(
+            fixture.league?.id
+          )
       );
 
     const matches =
       trackedFixtures.map(
-        (fixture) => ({
-          fixtureId:
-            fixture.fixture?.id ??
-            null,
+        (fixture) => {
+          const competition =
+            createCompetition(
+              fixture.league
+            );
 
-          date:
-            fixture.fixture?.date ??
-            null,
+          return {
+            fixtureId:
+              fixture.fixture?.id ??
+              null,
 
-          status:
-            fixture.fixture?.status
-              ?.short ??
-            null,
+            date:
+              fixture.fixture?.date ??
+              null,
 
-          statusLong:
-            fixture.fixture?.status
-              ?.long ??
-            null,
+            status:
+              fixture.fixture?.status
+                ?.short ??
+              null,
 
-          elapsed:
-            fixture.fixture?.status
-              ?.elapsed ??
-            null,
+            statusLong:
+              fixture.fixture?.status
+                ?.long ??
+              null,
 
-          extra:
-            fixture.fixture?.status
-              ?.extra ??
-            null,
+            elapsed:
+              fixture.fixture?.status
+                ?.elapsed ??
+              null,
 
-          competition:
-            fixture.league?.name ??
-            null,
+            extra:
+              fixture.fixture?.status
+                ?.extra ??
+              null,
 
-          country:
-            fixture.league?.country ??
-            null,
+            competitionId:
+              fixture.league?.id ??
+              null,
 
-          season:
-            fixture.league?.season ??
-            null,
+            competition:
+              competition?.name ??
+              fixture.league?.name ??
+              null,
 
-          home:
-            fixture.teams?.home?.name ??
-            null,
+            country:
+              competition?.country ??
+              fixture.league?.country ??
+              null,
 
-          away:
-            fixture.teams?.away?.name ??
-            null,
+            season:
+              fixture.league?.season ??
+              null,
 
-          homeScore:
-            fixture.goals?.home ??
-            null,
+            priority:
+              competition?.priority ??
+              "other",
 
-          awayScore:
-            fixture.goals?.away ??
-            null,
+            home:
+              fixture.teams?.home?.name ??
+              null,
 
-          eventCount:
-            Array.isArray(
-              fixture.events
-            )
-              ? fixture.events.length
-              : 0,
-        })
+            away:
+              fixture.teams?.away?.name ??
+              null,
+
+            homeTeamId:
+              fixture.teams?.home?.id ??
+              null,
+
+            awayTeamId:
+              fixture.teams?.away?.id ??
+              null,
+
+            homeScore:
+              fixture.goals?.home ??
+              null,
+
+            awayScore:
+              fixture.goals?.away ??
+              null,
+
+            halftimeHome:
+              fixture.score?.halftime
+                ?.home ??
+              null,
+
+            halftimeAway:
+              fixture.score?.halftime
+                ?.away ??
+              null,
+
+            fulltimeHome:
+              fixture.score?.fulltime
+                ?.home ??
+              null,
+
+            fulltimeAway:
+              fixture.score?.fulltime
+                ?.away ??
+              null,
+
+            eventCount:
+              Array.isArray(
+                fixture.events
+              )
+                ? fixture.events.length
+                : 0,
+
+            hasLineups:
+              Array.isArray(
+                fixture.lineups
+              )
+                ? fixture.lineups.length >
+                  0
+                : false,
+
+            hasStatistics:
+              Array.isArray(
+                fixture.statistics
+              )
+                ? fixture.statistics.length >
+                  0
+                : false,
+
+            hasPlayers:
+              Array.isArray(
+                fixture.players
+              )
+                ? fixture.players.length >
+                  0
+                : false,
+          };
+        }
       );
 
     return NextResponse.json({
@@ -189,10 +238,13 @@ export async function GET(
       apiRequest:
         "fixtures?live=all",
 
+      competitionMode:
+        "all_api_football_competitions",
+
       fixturesReturned:
         fixtures.length,
 
-      trackedFixtures:
+      validFixtures:
         trackedFixtures.length,
 
       matches,
@@ -218,4 +270,4 @@ export async function GET(
       }
     );
   }
-            }
+}

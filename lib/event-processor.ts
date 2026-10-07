@@ -35,7 +35,7 @@ export async function getNewEvents(
   return newEvents;
 }
 
-export async function saveEvent(
+export async function markEventAsPosted(
   event: LifecycleEvent
 ): Promise<boolean> {
   const sql = getDb();
@@ -64,22 +64,4 @@ export async function saveEvent(
   `;
 
   return result.length > 0;
-}
-
-export async function processFixture(
-  fixture: FootballFixture
-): Promise<LifecycleEvent[]> {
-  const newEvents = await getNewEvents(fixture);
-
-  const savedEvents: LifecycleEvent[] = [];
-
-  for (const event of newEvents) {
-    const saved = await saveEvent(event);
-
-    if (saved) {
-      savedEvents.push(event);
-    }
-  }
-
-  return savedEvents;
 }

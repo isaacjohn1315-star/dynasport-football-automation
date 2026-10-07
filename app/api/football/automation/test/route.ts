@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-import { footballApiRequest } from "@/lib/football-api";
-import { COMPETITIONS } from "@/lib/competitions";
-import { buildLifecycleEvents } from "@/lib/lifecycle";
-import { FootballFixture } from "@/lib/events";
+import { postToFacebook } from "@/lib/facebook";
 
 export async function GET(
   request: NextRequest
@@ -12,18 +8,20 @@ export async function GET(
     const cronSecret =
       process.env.CRON_SECRET;
 
-    const authorization =
-      request.headers.get("authorization");
+    if (!cronSecret) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "CRON_SECRET is not configured",
+        },
+        { status: 500 }
+      );
+    }
 
-    const providedSecret =
-      authorization?.startsWith("Bearer ")
-        ? authorization.slice(7)
-        : null;
+    const providedKey =
+      request.nextUrl.searchParams.get("key");
 
-    if (
-      cronSecret &&
-      providedSecret !== cronSecret
-    ) {
+    if (providedKey !== cronSecret) {
       return NextResponse.json(
         {
           success: false,
@@ -33,91 +31,36 @@ export async function GET(
       );
     }
 
-    const data = await footballApiRequest(
-      "/fixtures",
-      {
-        live: "all",
-      }
-    );
+    const message =
+      `⚽ DYNA SPORT TEST POST
 
-    const competitionIds = new Set<number>(
-      COMPETITIONS.map(
-        (competition) => competition.id
-      )
-    );
+` +
+      `✅ Facebook automation is connected successfully.
 
-    const fixtures: FootballFixture[] =
-      Array.isArray(data.response)
-        ? data.response.filter(
-            (fixture: FootballFixture) =>
-              competitionIds.has(
-                fixture.league?.id ?? 0
-              )
-          )
-        : [];
+` +
+      `This is a test post from the DynaSport football automation system.
 
-    const matches = fixtures.map(
-      (fixture) => {
-        const lifecycleEvents =
-          buildLifecycleEvents(fixture);
+` +
+      `DynaSport ⚽`;
 
-        return {
-          fixtureId:
-            fixture.fixture?.id ?? null,
+    const result =
+      await postToFacebook(message);
 
-          competition:
-            fixture.league?.name ?? null,
-
-          home:
-            fixture.teams?.home?.name ?? null,
-
-          away:
-            fixture.teams?.away?.name ?? null,
-
-          score: {
-            home:
-              fixture.goals?.home ?? null,
-
-            away:
-              fixture.goals?.away ?? null,
-          },
-
-          status:
-            fixture.fixture?.status?.short ?? null,
-
-          elapsed:
-            fixture.fixture?.status?.elapsed ??
-            null,
-
-          detectedEvents:
-            lifecycleEvents.map(
-              (event) => ({
-                eventKey:
-                  event.eventKey,
-
-                eventType:
-                  event.eventType,
-
-                minute:
-                  event.eventMinute,
-
-                team:
-                  event.teamName,
-
-                player:
-                  event.playerName,
-              })
-            ),
-        };
-      }
-    );
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: result.error,
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      fixturesChecked: fixtures.length,
-      matches,
-      facebookPostsCreated: 0,
-      databaseChanges: 0,
+      message:
+        "Test post published successfully to Facebook.",
+      postId: result.postId ?? null,
       timestamp:
         new Date().toISOString(),
     });

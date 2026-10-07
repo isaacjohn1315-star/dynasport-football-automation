@@ -1,216 +1,193 @@
 import { getDb } from "@/lib/db";
-
-import {
-  buildLifecycleEvents,
-  LifecycleEvent,
-} from "@/lib/lifecycle";
-
 import {
   FootballFixture,
+  FootballEvent,
 } from "@/lib/events";
+import {
+  getLifecycleEvents,
+} from "@/lib/lifecycle";
 
-/*
- * Find events that have not yet been
- * successfully recorded as posted.
- *
- * We intentionally check every lifecycle
- * event individually.
- */
+export type ProcessedEvent = {
+  eventKey: string;
+  eventType: string;
+  eventMinute: number | null;
+  eventData: Record<string, unknown>;
+};
+
+const CLAIM_DURATION_MINUTES = 20;
+
+function createClaimToken(): string {
+  return `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+}
+
+function normalizeEvent(
+  event: FootballEvent
+): ProcessedEvent | null {
+  if (!event.eventKey) {
+    return null;
+  }
+
+  return {
+    eventKey: event.eventKey,
+    eventType:
+      event.eventType ||
+      "unknown",
+    eventMinute:
+      typeof event.eventMinute ===
+      "number"
+        ? event.eventMinute
+        : null,
+    eventData:
+      event.eventData &&
+      typeof event.eventData ===
+        "object"
+        ? event.eventData
+        : {},
+  };
+}
+
 export async function getNewEvents(
   fixture: FootballFixture
-): Promise<LifecycleEvent[]> {
-  const sql = getDb();
+): Promise<ProcessedEvent[]> {
+  const fixtureId =
+    fixture.fixture?.id;
+
+  if (
+    typeof fixtureId !==
+    "number"
+  ) {
+    return [];
+  }
 
   const lifecycleEvents =
-    buildLifecycleEvents(
+    await getLifecycleEvents(
       fixture
     );
 
   if (
+    !Array.isArray(
+      lifecycleEvents
+    ) ||
     lifecycleEvents.length === 0
   ) {
     return [];
   }
 
-  const newEvents: LifecycleEvent[] =
+  const sql = getDb();
+
+  const newEvents: ProcessedEvent[] =
     [];
 
   for (
-    const event of lifecycleEvents
+    const lifecycleEvent of lifecycleEvents
   ) {
-    const existing =
+    const event =
+      normalizeEvent(
+        lifecycleEvent
+      );
+
+    if (!event) {
+      continue;
+    }
+
+    const claimToken =
+      createClaimToken();
+
+    const claimed =
       await sql`
-        SELECT id
-        FROM posted_events
-        WHERE event_key =
-          ${event.eventKey}
-        LIMIT 1
+        INSERT INTO posted_events (
+          fixture_id,
+          event_key,
+          event_type,
+          event_minute,
+          event_data,
+          status,
+          claim_token,
+          claim_expires_at,
+          claimed_at,
+          updated_at
+        )
+        VALUES (
+          ${fixtureId},
+          ${event.eventKey},
+          ${event.eventType},
+          ${event.eventMinute},
+          ${JSON.stringify(
+            event.eventData
+          )}::jsonb,
+          'claimed',
+          ${claimToken},
+          NOW() + INTERVAL '${CLAIM_DURATION_MINUTES} minutes',
+          NOW(),
+          NOW()
+        )
+        ON CONFLICT (event_key)
+        DO UPDATE SET
+          claim_token =
+            EXCLUDED.claim_token,
+          claim_expires_at =
+            EXCLUDED.claim_expires_at,
+          claimed_at =
+            EXCLUDED.claimed_at,
+          updated_at =
+            NOW()
+        WHERE posted_events.status != 'posted'
+          AND (
+            posted_events.claim_expires_at IS NULL
+            OR posted_events.claim_expires_at < NOW()
+          )
+        RETURNING event_key
       `;
 
     if (
-      existing.length === 0
+      claimed.length === 0
     ) {
-      newEvents.push(event);
+      continue;
     }
+
+    newEvents.push(event);
   }
 
   return newEvents;
 }
 
-/*
- * Atomically claim an event after
- * Facebook has successfully accepted it.
- *
- * ON CONFLICT prevents duplicate database
- * records if two Cron invocations happen
- * to process the same event at the same time.
- */
 export async function markEventAsPosted(
-  event: LifecycleEvent
+  event: ProcessedEvent & {
+    eventData?: Record<
+      string,
+      unknown
+    >;
+  }
 ): Promise<boolean> {
   const sql = getDb();
 
+  const eventData =
+    event.eventData ??
+    {};
+
   const result =
     await sql`
-      INSERT INTO posted_events (
-        event_key,
-        fixture_id,
-        event_type,
-        event_minute,
-        team_name,
-        player_name,
-        event_data
-      )
-      VALUES (
-        ${event.eventKey},
-        ${event.fixtureId},
-        ${event.eventType},
-        ${event.eventMinute},
-        ${event.teamName},
-        ${event.playerName},
-        ${JSON.stringify(
-          event.eventData
-        )}
-      )
-
-      ON CONFLICT (
-        event_key
-      )
-
-      DO NOTHING
-
-      RETURNING id;
+      UPDATE posted_events
+      SET
+        status = 'posted',
+        facebook_post_id = COALESCE(
+          facebook_post_id,
+          ${null}
+        ),
+        posted_at = COALESCE(
+          posted_at,
+          NOW()
+        ),
+        claim_expires_at = NULL,
+        updated_at = NOW()
+      WHERE event_key = ${event.eventKey}
+        AND status = 'claimed'
+      RETURNING event_key
     `;
 
   return result.length > 0;
 }
-
-/*
- * Save multiple successfully published
- * events.
- *
- * Each event remains independent.
- *
- * If one event fails to insert because
- * another Cron run already recorded it,
- * the other events can still be processed.
- */
-export async function markEventsAsPosted(
-  events: LifecycleEvent[]
-): Promise<LifecycleEvent[]> {
-  const posted: LifecycleEvent[] =
-    [];
-
-  for (
-    const event of events
-  ) {
-    const saved =
-      await markEventAsPosted(
-        event
-      );
-
-    if (saved) {
-      posted.push(event);
-    }
-  }
-
-  return posted;
-}
-
-/*
- * Useful for diagnostics and future
- * administration.
- */
-export async function getPostedEventCount(
-  fixtureId?: number
-): Promise<number> {
-  const sql = getDb();
-
-  if (
-    typeof fixtureId ===
-    "number"
-  ) {
-    const result =
-      await sql`
-        SELECT COUNT(*)::int AS count
-        FROM posted_events
-        WHERE fixture_id =
-          ${fixtureId};
-      `;
-
-    return (
-      Number(
-        result[0]?.count
-      ) || 0
-    );
-  }
-
-  const result =
-    await sql`
-      SELECT COUNT(*)::int AS count
-      FROM posted_events;
-    `;
-
-  return (
-    Number(
-      result[0]?.count
-    ) || 0
-  );
-}
-
-/*
- * Retrieve recent posted events.
- *
- * This is kept here rather than making
- * another API-Football request.
- */
-export async function getRecentPostedEvents(
-  limit = 50
-) {
-  const sql = getDb();
-
-  const safeLimit =
-    Math.min(
-      Math.max(
-        Math.floor(limit),
-        1
-      ),
-      200
-    );
-
-  return sql`
-    SELECT
-      id,
-      event_key,
-      fixture_id,
-      event_type,
-      event_minute,
-      team_name,
-      player_name,
-      event_data,
-      posted_at
-    FROM posted_events
-    ORDER BY posted_at DESC
-    LIMIT ${safeLimit};
-  `;
-    }

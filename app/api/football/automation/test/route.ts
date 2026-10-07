@@ -1,79 +1,205 @@
-import { NextRequest, NextResponse } from "next/server";
-import { postToFacebook } from "@/lib/facebook";
+import { NextResponse } from "next/server";
 
-export async function GET(
-  request: NextRequest
-) {
+import {
+  buildLifecycleEvents,
+} from "@/lib/lifecycle";
+
+import {
+  FootballFixture,
+} from "@/lib/events";
+
+import {
+  buildFacebookMessage,
+} from "@/lib/messages";
+
+export async function GET() {
   try {
-    const cronSecret =
-      process.env.CRON_SECRET;
-
-    if (!cronSecret) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "CRON_SECRET is not configured",
+    const mockFixture: FootballFixture = {
+      fixture: {
+        id: 999999,
+        date: new Date().toISOString(),
+        status: {
+          short: "2H",
+          long: "Second Half",
+          elapsed: 67,
+          extra: 0,
         },
-        { status: 500 }
+      },
+
+      league: {
+        id: 39,
+        name: "Premier League",
+        country: "England",
+        season: 2026,
+      },
+
+      teams: {
+        home: {
+          id: 1001,
+          name: "DynaSport United",
+          winner: null,
+        },
+
+        away: {
+          id: 1002,
+          name: "DynaSport City",
+          winner: null,
+        },
+      },
+
+      goals: {
+        home: 2,
+        away: 1,
+      },
+
+      score: {
+        halftime: {
+          home: 1,
+          away: 1,
+        },
+
+        fulltime: {
+          home: null,
+          away: null,
+        },
+
+        extratime: {
+          home: null,
+          away: null,
+        },
+
+        penalty: {
+          home: null,
+          away: null,
+        },
+      },
+
+      events: [
+        {
+          time: {
+            elapsed: 67,
+            extra: 0,
+          },
+
+          team: {
+            id: 1001,
+            name: "DynaSport United",
+          },
+
+          player: {
+            id: 5001,
+            name: "Alex Morgan",
+          },
+
+          assist: {
+            id: 5002,
+            name: "Daniel James",
+          },
+
+          type: "Goal",
+          detail: "Normal Goal",
+          comments: null,
+        },
+      ],
+    };
+
+    const lifecycleEvents =
+      buildLifecycleEvents(
+        mockFixture
       );
+
+    for (
+      const event of lifecycleEvents
+    ) {
+      event.eventData.competition =
+        mockFixture.league?.name ??
+        null;
+
+      event.eventData.country =
+        mockFixture.league?.country ??
+        null;
+
+      event.eventData.season =
+        mockFixture.league?.season ??
+        null;
+
+      event.eventData.homeTeam =
+        mockFixture.teams?.home?.name ??
+        null;
+
+      event.eventData.awayTeam =
+        mockFixture.teams?.away?.name ??
+        null;
+
+      event.eventData.homeScore =
+        mockFixture.goals?.home ??
+        null;
+
+      event.eventData.awayScore =
+        mockFixture.goals?.away ??
+        null;
     }
 
-    const providedKey =
-      request.nextUrl.searchParams.get("key");
+    const messages =
+      lifecycleEvents.map(
+        (event) => ({
+          eventKey:
+            event.eventKey,
 
-    if (providedKey !== cronSecret) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Unauthorized",
-        },
-        { status: 401 }
+          eventType:
+            event.eventType,
+
+          message:
+            buildFacebookMessage(
+              event
+            ),
+        })
       );
-    }
-
-    const message =
-      `⚽ DYNA SPORT TEST POST
-
-` +
-      `✅ Facebook automation is connected successfully.
-
-` +
-      `This is a test post from the DynaSport football automation system.
-
-` +
-      `DynaSport ⚽`;
-
-    const result =
-      await postToFacebook(message);
-
-    if (!result.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: result.error,
-        },
-        { status: 500 }
-      );
-    }
 
     return NextResponse.json({
       success: true,
+
       message:
-        "Test post published successfully to Facebook.",
-      postId: result.postId ?? null,
-      timestamp:
-        new Date().toISOString(),
+        "Football event/message test completed",
+
+      fixture: {
+        id:
+          mockFixture.fixture?.id,
+
+        competition:
+          mockFixture.league?.name,
+
+        home:
+          mockFixture.teams?.home?.name,
+
+        away:
+          mockFixture.teams?.away?.name,
+
+        score:
+          `${mockFixture.goals?.home ?? 0}-${mockFixture.goals?.away ?? 0}`,
+
+        status:
+          mockFixture.fixture?.status?.short,
+      },
+
+      lifecycleEvents:
+        lifecycleEvents.length,
+
+      messages,
     });
   } catch (error) {
     return NextResponse.json(
       {
         success: false,
+
         error:
           error instanceof Error
             ? error.message
-            : "Unknown error",
+            : "Unknown test error",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
-}
+      }

@@ -3,6 +3,7 @@ import {
   FootballFixture,
   createEventKey,
   getEventType,
+  getMatchStatus,
 } from "@/lib/events";
 
 export type LifecycleEvent = {
@@ -12,26 +13,38 @@ export type LifecycleEvent = {
 
   eventType: string;
 
-  eventMinute: number | null;
+  eventMinute:
+    | number
+    | null;
 
-  teamName: string | null;
+  teamName:
+    | string
+    | null;
 
-  playerName: string | null;
+  playerName:
+    | string
+    | null;
 
-  eventData: Record<string, unknown>;
-};
+  eventData: Record<
+    string,
+    unknown
+  >;
+}
 
 function createStatusEvent(
   fixture: FootballFixture,
   statusKey: string,
   eventType: string,
-  minute: number | null = null
+  minute:
+    | number
+    | null = null
 ): LifecycleEvent | null {
   const fixtureId =
     fixture.fixture?.id;
 
   if (
-    typeof fixtureId !== "number"
+    typeof fixtureId !==
+    "number"
   ) {
     return null;
   }
@@ -55,23 +68,55 @@ function createStatusEvent(
 
     eventData: {
       status:
-        fixture.fixture?.status
-          ?.short ??
+        fixture.fixture
+          ?.status?.short ??
         null,
 
       statusLong:
-        fixture.fixture?.status
-          ?.long ??
+        fixture.fixture
+          ?.status?.long ??
         null,
 
       elapsed:
-        fixture.fixture?.status
-          ?.elapsed ??
+        fixture.fixture
+          ?.status?.elapsed ??
         null,
 
       extra:
-        fixture.fixture?.status
-          ?.extra ??
+        fixture.fixture
+          ?.status?.extra ??
+        null,
+
+      fixtureDate:
+        fixture.fixture?.date ??
+        null,
+
+      venue:
+        fixture.fixture?.venue ??
+        null,
+
+      referee:
+        fixture.fixture?.referee ??
+        null,
+
+      competitionId:
+        fixture.league?.id ??
+        null,
+
+      competition:
+        fixture.league?.name ??
+        null,
+
+      country:
+        fixture.league?.country ??
+        null,
+
+      season:
+        fixture.league?.season ??
+        null,
+
+      round:
+        fixture.league?.round ??
         null,
 
       homeTeam:
@@ -80,6 +125,14 @@ function createStatusEvent(
 
       awayTeam:
         fixture.teams?.away?.name ??
+        null,
+
+      homeTeamId:
+        fixture.teams?.home?.id ??
+        null,
+
+      awayTeamId:
+        fixture.teams?.away?.id ??
         null,
 
       homeScore:
@@ -141,13 +194,11 @@ function createFixtureEvent(
     fixture.fixture?.id;
 
   if (
-    typeof fixtureId !== "number"
+    typeof fixtureId !==
+    "number"
   ) {
     return null;
   }
-
-  const eventType =
-    getEventType(event);
 
   return {
     eventKey:
@@ -158,10 +209,12 @@ function createFixtureEvent(
 
     fixtureId,
 
-    eventType,
+    eventType:
+      getEventType(event),
 
     eventMinute:
-      event.time?.elapsed ??
+      event.time
+        ?.elapsed ??
       null,
 
     teamName:
@@ -186,11 +239,13 @@ function createFixtureEvent(
         null,
 
       minute:
-        event.time?.elapsed ??
+        event.time
+          ?.elapsed ??
         null,
 
       extraMinute:
-        event.time?.extra ??
+        event.time
+          ?.extra ??
         null,
 
       team:
@@ -213,7 +268,9 @@ function addStatusEvent(
   fixture: FootballFixture,
   statusKey: string,
   eventType: string,
-  minute: number | null
+  minute:
+    | number
+    | null
 ) {
   const event =
     createStatusEvent(
@@ -235,25 +292,27 @@ export function buildLifecycleEvents(
     fixture.fixture?.id;
 
   if (
-    typeof fixtureId !== "number"
+    typeof fixtureId !==
+    "number"
   ) {
     return [];
   }
 
   const status =
-    fixture.fixture?.status?.short ??
-    "";
+    getMatchStatus(
+      fixture
+    );
 
-  const lifecycle:
-    LifecycleEvent[] = [];
+  const lifecycle: LifecycleEvent[] =
+    [];
 
   /*
+   * ----------------------------------------------------------
    * MATCH START
+   * ----------------------------------------------------------
    *
-   * Once API-Football reports the
-   * fixture as having entered play,
-   * create the permanent "started"
-   * event.
+   * If the first poll sees HT/2H/FT/etc., we can still
+   * reconstruct the earlier lifecycle markers.
    */
   if (
     [
@@ -279,12 +338,19 @@ export function buildLifecycleEvents(
 
   /*
    * FIRST HALF
-   *
-   * This is separate from the general
-   * match-start event.
    */
   if (
-    status === "1H"
+    [
+      "1H",
+      "HT",
+      "2H",
+      "ET",
+      "BT",
+      "P",
+      "FT",
+      "AET",
+      "PEN",
+    ].includes(status)
   ) {
     addStatusEvent(
       lifecycle,
@@ -397,7 +463,7 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * FULL-TIME
+   * FULL TIME
    */
   if (
     [
@@ -411,8 +477,8 @@ export function buildLifecycleEvents(
       fixture,
       "full_time",
       "full_time",
-      fixture.fixture?.status
-        ?.elapsed ??
+      fixture.fixture
+        ?.status?.elapsed ??
         null
     );
   }
@@ -458,8 +524,8 @@ export function buildLifecycleEvents(
       fixture,
       "abandoned",
       "match_abandoned",
-      fixture.fixture?.status
-        ?.elapsed ??
+      fixture.fixture
+        ?.status?.elapsed ??
         null
     );
   }
@@ -475,8 +541,8 @@ export function buildLifecycleEvents(
       fixture,
       "suspended",
       "match_suspended",
-      fixture.fixture?.status
-        ?.elapsed ??
+      fixture.fixture
+        ?.status?.elapsed ??
         null
     );
   }
@@ -492,25 +558,57 @@ export function buildLifecycleEvents(
       fixture,
       "interrupted",
       "match_interrupted",
-      fixture.fixture?.status
-        ?.elapsed ??
+      fixture.fixture
+        ?.status?.elapsed ??
         null
     );
   }
 
   /*
-   * ALL INDIVIDUAL FOOTBALL EVENTS
+   * AWARDED
+   */
+  if (
+    status === "AWD"
+  ) {
+    addStatusEvent(
+      lifecycle,
+      fixture,
+      "awarded",
+      "match_awarded",
+      null
+    );
+  }
+
+  /*
+   * WALKOVER
+   */
+  if (
+    status === "WO"
+  ) {
+    addStatusEvent(
+      lifecycle,
+      fixture,
+      "walkover",
+      "match_walkover",
+      null
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * INDIVIDUAL API-FOOTBALL EVENTS
+   * ----------------------------------------------------------
    *
-   * Nothing is grouped together here.
+   * Every event is processed independently.
    *
-   * If the API gives us:
+   * Therefore:
    *
-   * 67' Goal
-   * 68' Yellow
-   * 69' Substitution
+   * Goal
+   * Yellow card
+   * Substitution
+   * Corner
    *
-   * all three become independent
-   * lifecycle events.
+   * can all be detected during the same 15-minute poll.
    */
   const fixtureEvents =
     Array.isArray(
@@ -536,8 +634,14 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Remove duplicates inside the
-   * current API response.
+   * ----------------------------------------------------------
+   * DEDUPLICATION
+   * ----------------------------------------------------------
+   *
+   * The event key is generated before this stage.
+   *
+   * Multiple copies of the same event in an API response
+   * therefore collapse into one event.
    */
   const uniqueEvents =
     new Map<
@@ -548,13 +652,49 @@ export function buildLifecycleEvents(
   for (
     const event of lifecycle
   ) {
-    uniqueEvents.set(
-      event.eventKey,
-      event
-    );
+    if (
+      !uniqueEvents.has(
+        event.eventKey
+      )
+    ) {
+      uniqueEvents.set(
+        event.eventKey,
+        event
+      );
+    }
   }
 
+  /*
+   * Sort chronologically where possible.
+   *
+   * This is particularly important when one Cron run discovers
+   * several events that happened since the previous check.
+   */
   return Array.from(
     uniqueEvents.values()
+  ).sort(
+    (a, b) => {
+      const minuteA =
+        a.eventMinute ??
+        9999;
+
+      const minuteB =
+        b.eventMinute ??
+        9999;
+
+      if (
+        minuteA !==
+        minuteB
+      ) {
+        return (
+          minuteA -
+          minuteB
+        );
+      }
+
+      return a.eventKey.localeCompare(
+        b.eventKey
+      );
+    }
   );
       }

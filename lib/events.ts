@@ -41,17 +41,20 @@ export type FootballFixture = {
     id?: number;
     name?: string | null;
     country?: string | null;
+    season?: number | null;
   };
 
   teams?: {
     home?: {
       id?: number;
       name?: string | null;
+      winner?: boolean | null;
     };
 
     away?: {
       id?: number;
       name?: string | null;
+      winner?: boolean | null;
     };
   };
 
@@ -84,20 +87,40 @@ export type FootballFixture = {
 
   events?: FootballEvent[];
 
+  lineups?: unknown[];
+
   statistics?: unknown[];
+
+  players?: unknown[];
 };
 
 export function createEventKey(
   fixtureId: number,
   event: FootballEvent
 ): string {
-  const minute = event.time?.elapsed ?? 0;
-  const extra = event.time?.extra ?? 0;
-  const teamId = event.team?.id ?? 0;
-  const playerId = event.player?.id ?? 0;
-  const assistId = event.assist?.id ?? 0;
-  const type = event.type ?? "unknown";
-  const detail = event.detail ?? "unknown";
+  const minute =
+    event.time?.elapsed ?? 0;
+
+  const extra =
+    event.time?.extra ?? 0;
+
+  const teamId =
+    event.team?.id ?? 0;
+
+  const playerId =
+    event.player?.id ?? 0;
+
+  const assistId =
+    event.assist?.id ?? 0;
+
+  const type =
+    event.type ?? "unknown";
+
+  const detail =
+    event.detail ?? "unknown";
+
+  const comments =
+    event.comments ?? "";
 
   return [
     fixtureId,
@@ -108,23 +131,35 @@ export function createEventKey(
     assistId,
     type,
     detail,
+    comments,
   ].join(":");
 }
 
-export function getEventType(event: FootballEvent): string {
-  const type = event.type?.toLowerCase() ?? "";
-  const detail = event.detail?.toLowerCase() ?? "";
+export function getEventType(
+  event: FootballEvent
+): string {
+  const type =
+    event.type?.toLowerCase() ?? "";
+
+  const detail =
+    event.detail?.toLowerCase() ?? "";
 
   if (type === "goal") {
-    if (detail.includes("missed")) {
+    if (
+      detail.includes("missed")
+    ) {
       return "missed_penalty";
     }
 
-    if (detail.includes("own goal")) {
+    if (
+      detail.includes("own goal")
+    ) {
       return "own_goal";
     }
 
-    if (detail.includes("penalty")) {
+    if (
+      detail.includes("penalty")
+    ) {
       return "penalty_goal";
     }
 
@@ -132,19 +167,22 @@ export function getEventType(event: FootballEvent): string {
   }
 
   if (type === "card") {
-    if (detail.includes("yellow-red")) {
+    if (
+      detail.includes("yellow-red") ||
+      detail.includes("second yellow")
+    ) {
       return "second_yellow_red";
     }
 
-    if (detail.includes("second yellow")) {
-      return "second_yellow_red";
-    }
-
-    if (detail.includes("yellow")) {
+    if (
+      detail.includes("yellow")
+    ) {
       return "yellow_card";
     }
 
-    if (detail.includes("red")) {
+    if (
+      detail.includes("red")
+    ) {
       return "red_card";
     }
 
@@ -164,6 +202,27 @@ export function getEventType(event: FootballEvent): string {
     detail.includes("corner")
   ) {
     return "corner";
+  }
+
+  if (
+    type.includes("penalty") ||
+    detail.includes("penalty")
+  ) {
+    return "penalty";
+  }
+
+  if (
+    type.includes("offside") ||
+    detail.includes("offside")
+  ) {
+    return "offside";
+  }
+
+  if (
+    type.includes("foul") ||
+    detail.includes("foul")
+  ) {
+    return "foul";
   }
 
   return type || "unknown";
@@ -202,14 +261,15 @@ export function getEventAssist(
 export function getMatchStatus(
   fixture: FootballFixture
 ): string {
-  return fixture.fixture?.status?.short ?? "UNKNOWN";
+  return (
+    fixture.fixture?.status?.short ??
+    "UNKNOWN"
+  );
 }
 
 export function isMatchStarted(
   fixture: FootballFixture
 ): boolean {
-  const status = getMatchStatus(fixture);
-
   return [
     "1H",
     "HT",
@@ -220,13 +280,17 @@ export function isMatchStarted(
     "FT",
     "AET",
     "PEN",
-  ].includes(status);
+  ].includes(
+    getMatchStatus(fixture)
+  );
 }
 
 export function isHalfTime(
   fixture: FootballFixture
 ): boolean {
-  return getMatchStatus(fixture) === "HT";
+  return (
+    getMatchStatus(fixture) === "HT"
+  );
 }
 
 export function isSecondHalf(
@@ -237,7 +301,12 @@ export function isSecondHalf(
     "ET",
     "BT",
     "P",
-  ].includes(getMatchStatus(fixture));
+    "FT",
+    "AET",
+    "PEN",
+  ].includes(
+    getMatchStatus(fixture)
+  );
 }
 
 export function isExtraTime(
@@ -249,7 +318,20 @@ export function isExtraTime(
     "P",
     "AET",
     "PEN",
-  ].includes(getMatchStatus(fixture));
+  ].includes(
+    getMatchStatus(fixture)
+  );
+}
+
+export function isPenaltyShootout(
+  fixture: FootballFixture
+): boolean {
+  return [
+    "P",
+    "PEN",
+  ].includes(
+    getMatchStatus(fixture)
+  );
 }
 
 export function isFullTime(
@@ -259,13 +341,16 @@ export function isFullTime(
     "FT",
     "AET",
     "PEN",
-  ].includes(getMatchStatus(fixture));
+  ].includes(
+    getMatchStatus(fixture)
+  );
 }
 
 export function getStatusLabel(
   fixture: FootballFixture
 ): string {
-  const status = getMatchStatus(fixture);
+  const status =
+    getMatchStatus(fixture);
 
   switch (status) {
     case "NS":
@@ -313,6 +398,9 @@ export function getStatusLabel(
     case "INT":
       return "Interrupted";
 
+    case "LIVE":
+      return "Live";
+
     case "AWD":
       return "Awarded";
 
@@ -322,4 +410,4 @@ export function getStatusLabel(
     default:
       return status || "Unknown";
   }
-  }
+        }

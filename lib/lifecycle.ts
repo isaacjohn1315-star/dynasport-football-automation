@@ -4,7 +4,9 @@ import {
   createEventKey,
 } from "@/lib/events";
 
-function text(value: unknown): string {
+function text(
+  value: unknown
+): string {
   return typeof value === "string"
     ? value.trim()
     : "";
@@ -38,18 +40,69 @@ function makeEvent(
   };
 }
 
-function fixtureTeams(
+function getTeams(
   fixture: FootballFixture
 ) {
   return {
     homeTeam:
-      fixture.teams?.home?.name ?? null,
+      fixture.teams?.home?.name ??
+      null,
+
     awayTeam:
-      fixture.teams?.away?.name ?? null,
+      fixture.teams?.away?.name ??
+      null,
+
     homeTeamId:
-      fixture.teams?.home?.id ?? null,
+      fixture.teams?.home?.id ??
+      null,
+
     awayTeamId:
-      fixture.teams?.away?.id ?? null,
+      fixture.teams?.away?.id ??
+      null,
+  };
+}
+
+function getScoreData(
+  fixture: FootballFixture
+) {
+  return {
+    homeScore:
+      fixture.goals?.home ?? null,
+
+    awayScore:
+      fixture.goals?.away ?? null,
+
+    halftimeHome:
+      fixture.score?.halftime?.home ??
+      null,
+
+    halftimeAway:
+      fixture.score?.halftime?.away ??
+      null,
+
+    fulltimeHome:
+      fixture.score?.fulltime?.home ??
+      null,
+
+    fulltimeAway:
+      fixture.score?.fulltime?.away ??
+      null,
+
+    extraTimeHome:
+      fixture.score?.extratime?.home ??
+      null,
+
+    extraTimeAway:
+      fixture.score?.extratime?.away ??
+      null,
+
+    penaltyHome:
+      fixture.score?.penalty?.home ??
+      null,
+
+    penaltyAway:
+      fixture.score?.penalty?.away ??
+      null,
   };
 }
 
@@ -65,7 +118,8 @@ export async function getLifecycleEvents(
     return [];
   }
 
-  const events: FootballEvent[] = [];
+  const events: FootballEvent[] =
+    [];
 
   const status =
     text(
@@ -88,23 +142,27 @@ export async function getLifecycleEvents(
     );
 
   const teams =
-    fixtureTeams(fixture);
+    getTeams(fixture);
+
+  const scores =
+    getScoreData(fixture);
 
   /*
-   * Every API-Football event is processed individually.
-   * We deliberately do not collapse multiple events occurring
-   * during the same minute.
+   * API-Football individual events.
+   *
+   * Every event gets its own event key.
+   * Therefore two events occurring during the
+   * same minute are not collapsed together.
    */
   if (
     Array.isArray(fixture.events)
   ) {
     fixture.events.forEach(
       (rawEvent, index) => {
-        const type =
-          text(rawEvent.type)
-            .toLowerCase();
+        const rawType =
+          text(rawEvent.type);
 
-        const detail =
+        const rawDetail =
           text(rawEvent.detail);
 
         const minute =
@@ -117,10 +175,8 @@ export async function getLifecycleEvents(
             rawEvent.time?.extra
           );
 
-        const eventType =
-          `${type || "event"}_${(
-            detail || "update"
-          )
+        const normalizedType =
+          rawType
             .toLowerCase()
             .replace(
               /[^a-z0-9]+/g,
@@ -129,7 +185,25 @@ export async function getLifecycleEvents(
             .replace(
               /^_|_$/g,
               ""
-            )}`;
+            ) ||
+          "event";
+
+        const normalizedDetail =
+          rawDetail
+            .toLowerCase()
+            .replace(
+              /[^a-z0-9]+/g,
+              "_"
+            )
+            .replace(
+              /^_|_$/g,
+              "" 
+            );
+
+        const eventType =
+          normalizedDetail
+            ? `${normalizedType}_${normalizedDetail}`
+            : normalizedType;
 
         events.push(
           makeEvent(
@@ -139,6 +213,7 @@ export async function getLifecycleEvents(
             minute,
             {
               ...teams,
+              ...scores,
 
               minute,
               extra:
@@ -187,10 +262,8 @@ export async function getLifecycleEvents(
   }
 
   /*
-   * Important match-status lifecycle events.
-   * The database event key prevents these from being posted twice.
+   * Match lifecycle statuses supplied by API-Football.
    */
-
   const lifecycleMap: Record<
     string,
     string
@@ -226,67 +299,22 @@ export async function getLifecycleEvents(
         elapsed,
         {
           ...teams,
+          ...scores,
 
           status,
           statusLong,
           elapsed,
           extra,
-
-          homeScore:
-            fixture.goals?.home ??
-            null,
-
-          awayScore:
-            fixture.goals?.away ??
-            null,
-
-          halftimeHome:
-            fixture.score?.halftime
-              ?.home ??
-            null,
-
-          halftimeAway:
-            fixture.score?.halftime
-              ?.away ??
-            null,
-
-          fulltimeHome:
-            fixture.score?.fulltime
-              ?.home ??
-            null,
-
-          fulltimeAway:
-            fixture.score?.fulltime
-              ?.away ??
-            null,
-
-          extraTimeHome:
-            fixture.score?.extratime
-              ?.home ??
-            null,
-
-          extraTimeAway:
-            fixture.score?.extratime
-              ?.away ??
-            null,
-
-          penaltyHome:
-            fixture.score?.penalty
-              ?.home ??
-            null,
-
-          penaltyAway:
-            fixture.score?.penalty
-              ?.away ??
-            null,
         }
       )
     );
   }
 
   /*
-   * Starting XI / lineup availability.
-   * This is emitted when API-Football provides lineups.
+   * Starting lineups.
+   *
+   * We deliberately create one deterministic event.
+   * The database will ensure it is only published once.
    */
   if (
     Array.isArray(
@@ -302,6 +330,7 @@ export async function getLifecycleEvents(
         elapsed,
         {
           ...teams,
+
           lineupCount:
             fixture.lineups.length,
         }
@@ -310,79 +339,37 @@ export async function getLifecycleEvents(
   }
 
   /*
-   * Score-state snapshots provide a fallback for important
-   * score changes even when an individual event is unavailable.
+   * Score snapshot.
+   *
+   * This is supplementary protection for score changes
+   * that may not arrive as a normal individual event.
+   *
+   * The event key includes the current minute, so a
+   * later score state can be detected without repeatedly
+   * publishing the same snapshot during one minute.
    */
-  const homeScore =
-    numberOrNull(
-      fixture.goals?.home
-    );
-
-  const awayScore =
-    numberOrNull(
-      fixture.goals?.away
-    );
-
   if (
-    homeScore !== null ||
-    awayScore !== null
+    scores.homeScore !== null ||
+    scores.awayScore !== null
   ) {
+    const scoreIndex =
+      elapsed ?? 0;
+
     events.push(
       makeEvent(
         fixtureId,
         "score_update",
-        elapsed ?? 0,
+        scoreIndex,
         elapsed,
         {
           ...teams,
+          ...scores,
+
           minute: elapsed,
-
-          homeScore,
-          awayScore,
-
-          halftimeHome:
-            fixture.score?.halftime
-              ?.home ??
-            null,
-
-          halftimeAway:
-            fixture.score?.halftime
-              ?.away ??
-            null,
-
-          fulltimeHome:
-            fixture.score?.fulltime
-              ?.home ??
-            null,
-
-          fulltimeAway:
-            fixture.score?.fulltime
-              ?.away ??
-            null,
-
-          extraTimeHome:
-            fixture.score?.extratime
-              ?.home ??
-            null,
-
-          extraTimeAway:
-            fixture.score?.extratime
-              ?.away ??
-            null,
-
-          penaltyHome:
-            fixture.score?.penalty
-              ?.home ??
-            null,
-
-          penaltyAway:
-            fixture.score?.penalty
-              ?.away ??
-            null,
         }
       )
     );
   }
 
   return events;
-          }
+  }

@@ -1,294 +1,242 @@
+export type CompetitionPriority =
+  | "high"
+  | "major"
+  | "international"
+  | "other";
+
 export type Competition = {
   id: number;
   name: string;
   country: string;
-  priority: "high" | "major" | "international" | "other";
+  priority: CompetitionPriority;
 };
 
-export const COMPETITIONS: Competition[] = [
-  // 🇳🇬 Nigeria / Africa — highest priority
-  {
-    id: 399,
-    name: "Nigeria Professional Football League",
-    country: "Nigeria",
-    priority: "high",
-  },
+/*
+ * DynaSport is intended to cover ALL football competitions
+ * returned by API-Football's live fixture feed.
+ *
+ * We therefore do NOT maintain a hard-coded list of 1,247
+ * competition IDs.
+ *
+ * API-Football returns the following information directly on
+ * every fixture:
+ *
+ *   fixture.league.id
+ *   fixture.league.name
+ *   fixture.league.country
+ *   fixture.league.season
+ *
+ * This allows DynaSport to automatically recognize:
+ *
+ * - domestic leagues
+ * - domestic cups
+ * - super cups
+ * - continental competitions
+ * - World Cup
+ * - World Cup qualifiers
+ * - AFCON
+ * - AFCON qualifiers
+ * - Asian Cup
+ * - Asian Cup qualifiers
+ * - Euro Championship
+ * - Euro qualifiers
+ * - Gold Cup
+ * - Gold Cup qualifiers
+ * - Copa America
+ * - UEFA competitions
+ * - CAF competitions
+ * - women's competitions
+ * - youth competitions
+ * - playoff competitions
+ * - lower divisions
+ * - other competitions covered by API-Football
+ *
+ * API-Football currently lists 1,247 leagues and cups.
+ *
+ * We deliberately do not guess IDs for competitions.
+ */
 
-  // 🏴 England
-  {
-    id: 39,
-    name: "Premier League",
-    country: "England",
-    priority: "high",
-  },
-  {
-    id: 40,
-    name: "Championship",
-    country: "England",
-    priority: "major",
-  },
-  {
-    id: 41,
-    name: "League One",
-    country: "England",
-    priority: "major",
-  },
-  {
-    id: 42,
-    name: "League Two",
-    country: "England",
-    priority: "major",
-  },
-  {
-    id: 45,
-    name: "FA Cup",
-    country: "England",
-    priority: "major",
-  },
-  {
-    id: 48,
-    name: "EFL Cup",
-    country: "England",
-    priority: "major",
-  },
-  {
-    id: 528,
-    name: "Community Shield",
-    country: "England",
-    priority: "major",
-  },
+export const COMPETITIONS: Competition[] = [];
 
-  // 🇪🇸 Spain
-  {
-    id: 140,
-    name: "La Liga",
-    country: "Spain",
-    priority: "high",
-  },
-  {
-    id: 141,
-    name: "Segunda División",
-    country: "Spain",
-    priority: "major",
-  },
-  {
-    id: 143,
-    name: "Copa del Rey",
-    country: "Spain",
-    priority: "major",
-  },
+/*
+ * Kept for compatibility with existing imports.
+ *
+ * The old implementation used:
+ *
+ *   COMPETITION_IDS.has(leagueId)
+ *
+ * That would require maintaining a massive and constantly
+ * changing hard-coded ID list.
+ *
+ * Instead, every valid API-Football competition is accepted.
+ */
+export const COMPETITION_IDS =
+  new Set<number>();
 
-  // 🇮🇹 Italy
-  {
-    id: 135,
-    name: "Serie A",
-    country: "Italy",
-    priority: "high",
-  },
-  {
-    id: 136,
-    name: "Serie B",
-    country: "Italy",
-    priority: "major",
-  },
-  {
-    id: 137,
-    name: "Coppa Italia",
-    country: "Italy",
-    priority: "major",
-  },
+/*
+ * Returns true when a fixture has a valid competition ID.
+ *
+ * We intentionally accept every API-Football competition.
+ */
+export function isTrackedCompetition(
+  leagueId:
+    | number
+    | null
+    | undefined
+): boolean {
+  return (
+    typeof leagueId ===
+      "number" &&
+    Number.isFinite(
+      leagueId
+    ) &&
+    leagueId > 0
+  );
+}
 
-  // 🇩🇪 Germany
-  {
-    id: 78,
-    name: "Bundesliga",
-    country: "Germany",
-    priority: "high",
-  },
-  {
-    id: 79,
-    name: "2. Bundesliga",
-    country: "Germany",
-    priority: "major",
-  },
-  {
-    id: 81,
-    name: "DFB-Pokal",
-    country: "Germany",
-    priority: "major",
-  },
+/*
+ * Determines a useful priority for Facebook
+ * message formatting and future filtering.
+ *
+ * This does NOT exclude any competition.
+ */
+export function getCompetitionPriority(
+  competition:
+    | Pick<
+        Competition,
+        "name" | "country"
+      >
+    | null
+    | undefined
+): CompetitionPriority {
+  const name =
+    competition?.name
+      ?.toLowerCase()
+      .trim() ?? "";
 
-  // 🇫🇷 France
-  {
-    id: 61,
-    name: "Ligue 1",
-    country: "France",
-    priority: "high",
-  },
-  {
-    id: 62,
-    name: "Ligue 2",
-    country: "France",
-    priority: "major",
-  },
-  {
-    id: 66,
-    name: "Coupe de France",
-    country: "France",
-    priority: "major",
-  },
+  const country =
+    competition?.country
+      ?.toLowerCase()
+      .trim() ?? "";
 
-  // 🇵🇹 Portugal
-  {
-    id: 94,
-    name: "Primeira Liga",
-    country: "Portugal",
-    priority: "major",
-  },
-  {
-    id: 95,
-    name: "Segunda Liga",
-    country: "Portugal",
-    priority: "major",
-  },
-  {
-    id: 96,
-    name: "Taça de Portugal",
-    country: "Portugal",
-    priority: "major",
-  },
+  /*
+   * Nigeria receives highest priority because
+   * DynaSport is Nigeria-focused.
+   */
+  if (
+    country === "nigeria" ||
+    name.includes("npfl") ||
+    name.includes(
+      "federation cup"
+    )
+  ) {
+    return "high";
+  }
 
-  // 🇪🇺 UEFA
-  {
-    id: 2,
-    name: "UEFA Champions League",
-    country: "Europe",
-    priority: "high",
-  },
-  {
-    id: 3,
-    name: "UEFA Europa League",
-    country: "Europe",
-    priority: "high",
-  },
-  {
-    id: 848,
-    name: "UEFA Conference League",
-    country: "Europe",
-    priority: "high",
-  },
+  /*
+   * Major global competitions.
+   */
+  const internationalKeywords = [
+    "world cup",
+    "africa cup of nations",
+    "african nations championship",
+    "asian cup",
+    "euro championship",
+    "copa america",
+    "gold cup",
+    "champions league",
+    "europa league",
+    "conference league",
+    "nations league",
+    "olympics",
+    "caf champions league",
+    "caf confederation cup",
+  ];
 
-  // 🌎 Other major leagues
-  {
-    id: 253,
-    name: "MLS",
-    country: "USA",
-    priority: "other",
-  },
-  {
-    id: 262,
-    name: "Liga MX",
-    country: "Mexico",
-    priority: "other",
-  },
-  {
-    id: 71,
-    name: "Brasileirão Série A",
-    country: "Brazil",
-    priority: "other",
-  },
-  {
-    id: 128,
-    name: "Argentine Primera División",
-    country: "Argentina",
-    priority: "other",
-  },
-  {
-    id: 307,
-    name: "Saudi Pro League",
-    country: "Saudi Arabia",
-    priority: "other",
-  },
-  {
-    id: 98,
-    name: "J1 League",
-    country: "Japan",
-    priority: "other",
-  },
-  {
-    id: 292,
-    name: "K League 1",
-    country: "South Korea",
-    priority: "other",
-  },
-  {
-    id: 88,
-    name: "Eredivisie",
-    country: "Netherlands",
-    priority: "other",
-  },
-  {
-    id: 144,
-    name: "Belgian Pro League",
-    country: "Belgium",
-    priority: "other",
-  },
-  {
-    id: 179,
-    name: "Scottish Premiership",
-    country: "Scotland",
-    priority: "other",
-  },
-  {
-    id: 203,
-    name: "Turkish Süper Lig",
-    country: "Turkey",
-    priority: "other",
-  },
-  {
-    id: 197,
-    name: "Greek Super League",
-    country: "Greece",
-    priority: "other",
-  },
+  if (
+    internationalKeywords.some(
+      (keyword) =>
+        name.includes(keyword)
+    )
+  ) {
+    return "international";
+  }
 
-  // 🌍 Major international competitions
-  {
-    id: 1,
-    name: "FIFA World Cup",
-    country: "World",
-    priority: "international",
-  },
-  {
-    id: 4,
-    name: "UEFA European Championship",
-    country: "Europe",
-    priority: "international",
-  },
-  {
-    id: 6,
-    name: "Africa Cup of Nations",
-    country: "Africa",
-    priority: "high",
-  },
+  /*
+   * Major European and global domestic
+   * competitions.
+   */
+  const majorKeywords = [
+    "premier league",
+    "la liga",
+    "serie a",
+    "bundesliga",
+    "ligue 1",
+    "primeira liga",
+    "eredivisie",
+    "championship",
+    "league cup",
+    "fa cup",
+    "copa del rey",
+    "coppa italia",
+    "dfb-pokal",
+    "coupe de france",
+    "mls",
+    "liga mx",
+    "brasileirao",
+    "argentine",
+    "pro league",
+  ];
 
-  // 🌍 CAF club competitions
-  {
-    id: 12,
-    name: "CAF Champions League",
-    country: "Africa",
-    priority: "high",
-  },
-  {
-    id: 13,
-    name: "CAF Confederation Cup",
-    country: "Africa",
-    priority: "high",
-  },
-];
+  if (
+    majorKeywords.some(
+      (keyword) =>
+        name.includes(keyword)
+    )
+  ) {
+    return "major";
+  }
 
-export const COMPETITION_IDS = new Set(
-  COMPETITIONS.map(
-    (competition) => competition.id
-  )
-);
+  return "other";
+}
+
+/*
+ * Converts the API-Football league object into
+ * our internal competition structure.
+ */
+export function createCompetition(
+  league:
+    | {
+        id?: number;
+        name?: string | null;
+        country?: string | null;
+      }
+    | null
+    | undefined
+): Competition | null {
+  if (
+    typeof league?.id !==
+    "number"
+  ) {
+    return null;
+  }
+
+  const name =
+    league.name?.trim() ||
+    "Unknown Competition";
+
+  const country =
+    league.country?.trim() ||
+    "Unknown";
+
+  return {
+    id: league.id,
+    name,
+    country,
+    priority:
+      getCompetitionPriority({
+        name,
+        country,
+      }),
+  };
+}

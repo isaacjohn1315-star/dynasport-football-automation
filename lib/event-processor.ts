@@ -3,9 +3,7 @@ import {
   FootballFixture,
   FootballEvent,
 } from "@/lib/events";
-import {
-  getLifecycleEvents,
-} from "@/lib/lifecycle";
+import { getLifecycleEvents } from "@/lib/lifecycle";
 
 export type ProcessedEvent = {
   eventKey: string;
@@ -14,7 +12,8 @@ export type ProcessedEvent = {
   eventData: Record<string, unknown>;
 };
 
-const CLAIM_DURATION_MINUTES = 20;
+const CLAIM_DURATION_MS =
+  20 * 60 * 1000;
 
 function createClaimToken(): string {
   return `${Date.now()}-${Math.random()
@@ -27,15 +26,16 @@ function createClaimToken(): string {
 function normalizeEvent(
   event: FootballEvent
 ): ProcessedEvent | null {
-  if (!event.eventKey) {
+  if (
+    !event.eventKey ||
+    !event.eventType
+  ) {
     return null;
   }
 
   return {
     eventKey: event.eventKey,
-    eventType:
-      event.eventType ||
-      "unknown",
+    eventType: event.eventType,
     eventMinute:
       typeof event.eventMinute ===
       "number"
@@ -50,6 +50,15 @@ function normalizeEvent(
   };
 }
 
+/**
+ * Atomically claims newly discovered events.
+ *
+ * If two Cron executions run at the same time,
+ * only one execution can successfully claim an event.
+ *
+ * If Facebook posting fails, the claim expires and
+ * a later Cron execution can retry the event.
+ */
 export async function getNewEvents(
   fixture: FootballFixture
 ): Promise<ProcessedEvent[]> {
@@ -57,8 +66,7 @@ export async function getNewEvents(
     fixture.fixture?.id;
 
   if (
-    typeof fixtureId !==
-    "number"
+    typeof fixtureId !== "number"
   ) {
     return [];
   }
@@ -69,9 +77,6 @@ export async function getNewEvents(
     );
 
   if (
-    !Array.isArray(
-      lifecycleEvents
-    ) ||
     lifecycleEvents.length === 0
   ) {
     return [];
@@ -79,8 +84,14 @@ export async function getNewEvents(
 
   const sql = getDb();
 
-  const newEvents: ProcessedEvent[] =
+  const claimedEvents: ProcessedEvent[] =
     [];
+
+  const claimExpiresAt =
+    new Date(
+      Date.now() +
+        CLAIM_DURATION_MS
+    );
 
   for (
     const lifecycleEvent of lifecycleEvents
@@ -97,7 +108,7 @@ export async function getNewEvents(
     const claimToken =
       createClaimToken();
 
-    const claimed =
+    const rows =
       await sql`
         INSERT INTO posted_events (
           fixture_id,
@@ -121,18 +132,19 @@ export async function getNewEvents(
           )}::jsonb,
           'claimed',
           ${claimToken},
-          NOW() + INTERVAL '${CLAIM_DURATION_MINUTES} minutes',
+          ${claimExpiresAt},
           NOW(),
           NOW()
         )
         ON CONFLICT (event_key)
         DO UPDATE SET
+          status = 'claimed',
           claim_token =
             EXCLUDED.claim_token,
           claim_expires_at =
             EXCLUDED.claim_expires_at,
           claimed_at =
-            EXCLUDED.claimed_at,
+            NOW(),
           updated_at =
             NOW()
         WHERE posted_events.status != 'posted'
@@ -140,48 +152,47 @@ export async function getNewEvents(
             posted_events.claim_expires_at IS NULL
             OR posted_events.claim_expires_at < NOW()
           )
-        RETURNING event_key
+        RETURNING
+          event_key,
+          claim_token
       `;
 
     if (
-      claimed.length === 0
+      rows.length === 0
     ) {
       continue;
     }
 
-    newEvents.push(event);
+    claimedEvents.push(
+      event
+    );
   }
 
-  return newEvents;
+  return claimedEvents;
 }
 
+/**
+ * Marks an event as successfully published.
+ *
+ * The Facebook post ID is stored so the database contains
+ * the relationship between the detected football event
+ * and the actual Facebook publication.
+ */
 export async function markEventAsPosted(
-  event: ProcessedEvent & {
-    eventData?: Record<
-      string,
-      unknown
-    >;
-  }
+  event: ProcessedEvent,
+  facebookPostId?: string | null
 ): Promise<boolean> {
   const sql = getDb();
 
-  const eventData =
-    event.eventData ??
-    {};
-
-  const result =
+  const rows =
     await sql`
       UPDATE posted_events
       SET
         status = 'posted',
-        facebook_post_id = COALESCE(
-          facebook_post_id,
-          ${null}
-        ),
-        posted_at = COALESCE(
-          posted_at,
-          NOW()
-        ),
+        facebook_post_id =
+          ${facebookPostId ?? null},
+        posted_at = NOW(),
+        claim_token = NULL,
         claim_expires_at = NULL,
         updated_at = NOW()
       WHERE event_key = ${event.eventKey}
@@ -189,5 +200,5 @@ export async function markEventAsPosted(
       RETURNING event_key
     `;
 
-  return result.length > 0;
+  return rows.length > 0;
 }

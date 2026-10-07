@@ -1,4 +1,4 @@
-{
+{{
   "name": "dynasport-live-football",
   "version": "1.0.0",
   "private": true,
@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@neondatabase/serverless": "latest",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"

@@ -131,6 +131,15 @@ function getAssistText(
   return "";
 }
 
+function getCompetitionText(
+  event: LifecycleEvent
+): string {
+  return typeof event.eventData
+    ?.competition === "string"
+    ? event.eventData.competition
+    : "";
+}
+
 function getFixtureHeader(
   event: LifecycleEvent
 ): string {
@@ -164,9 +173,6 @@ function getEventCommentary(
   const score =
     getScoreText(event);
 
-  const assist =
-    getAssistText(event);
-
   switch (
     event.eventType
   ) {
@@ -174,38 +180,45 @@ function getEventCommentary(
       return pickVariant(event, [
         "And we're underway! The match has officially kicked off.",
         "Kick-off! The action is officially underway.",
-        "We're off! The two sides are now battling for the points.",
+        "We're off! The battle for the points has begun.",
         "Here we go! The match has started.",
+      ]);
+
+    case "first_half_started":
+      return pickVariant(event, [
+        "The first half is underway!",
+        "We're off in the opening half!",
+        "The referee gets us started. First-half action is underway.",
       ]);
 
     case "half_time":
       return pickVariant(event, [
-        `Half-time! The teams head into the break with the score at ${score || "level"}.`,
-        `That's the end of the first half. Half-time arrives with ${score || "the score still undecided"}.`,
-        `HT! The opening 45 minutes are complete${score ? ` — ${score}` : ""}.`,
-        `The referee brings the first half to an end. Half-time${score ? `: ${score}` : ""}.`,
+        `Half-time! The teams head into the break${score ? ` with the score at ${score}` : ""}.`,
+        `That's the end of the first half${score ? ` — ${score}` : ""}.`,
+        `HT! The opening 45 minutes are complete${score ? `: ${score}` : ""}.`,
+        `The referee brings the first half to an end${score ? ` with ${score} on the scoreboard` : ""}.`,
       ]);
 
     case "second_half_started":
       return pickVariant(event, [
         `Back underway! The second half has started${score ? ` with the score ${score}` : ""}.`,
         "We're back! The second half is officially underway.",
-        `Second half begins. Can either side find the breakthrough${score ? `? Current score: ${score}` : "?"}`,
+        `Second half begins${score ? ` — ${score}` : ""}.`,
         "The teams are back out and the second half is underway!",
       ]);
 
     case "extra_time_started":
       return pickVariant(event, [
         "Extra time is underway! The match could not be decided in normal time.",
-        "Into extra time! Another 30 minutes will decide this contest if necessary.",
+        "Into extra time! Another 30 minutes could decide this contest.",
         "The referee signals the start of extra time.",
       ]);
 
     case "extra_time_break":
       return pickVariant(event, [
-        "Extra-time break! The teams prepare for the final 15 minutes.",
-        "Change of ends in extra time. One final push remains.",
-        "Extra-time interval. The decisive moments may be just ahead.",
+        "Extra-time break! One final push remains.",
+        "Change of ends in extra time. The decisive moments may be ahead.",
+        "Extra-time interval. The players prepare for the final 15 minutes.",
       ]);
 
     case "penalties_started":
@@ -220,16 +233,63 @@ function getEventCommentary(
         `FULL-TIME! The referee has brought the match to an end${score ? ` — ${score}` : ""}.`,
         `That's FULL-TIME! The final whistle has been blown${score ? ` with ${score} on the scoreboard` : ""}.`,
         `The final whistle goes! Full-time${score ? `: ${score}` : ""}.`,
-        `FULL-TIME! Ninety minutes${score ? ` and the final score is ${score}` : ""} are complete.`,
+        `FULL-TIME! The contest is over${score ? ` and the final score is ${score}` : ""}.`,
       ]);
 
-    case "goal":
+    case "match_postponed":
       return pickVariant(event, [
-        `GOAL! ${player} finds the net for ${team}!${minute ? ` ${minute}` : ""}${score ? ` The score is now ${score}.` : ""}`,
-        `⚽ GOAL! ${team} have scored! ${player} is the name on the scoresheet.${score ? ` ${score}.` : ""}`,
-        `It's in! ${player} has put ${team} on the scoresheet.${minute ? ` ${minute}` : ""}${score ? ` ${score}.` : ""}`,
-        `${team} strike! ${player} finishes the move and changes the score.${score ? ` ${score}.` : ""}`,
+        "MATCH POSTPONED! This fixture will not go ahead as originally scheduled.",
+        "The match has been postponed. A new date will be confirmed when available.",
+        "POSTPONED! The scheduled fixture has been called off for now.",
       ]);
+
+    case "match_cancelled":
+      return pickVariant(event, [
+        "MATCH CANCELLED! This fixture will not be played as scheduled.",
+        "The fixture has been cancelled.",
+        "CANCELLED! The scheduled match has been called off.",
+      ]);
+
+    case "match_abandoned":
+      return pickVariant(event, [
+        "MATCH ABANDONED! Play has been brought to an early end.",
+        "The referee has abandoned the match before normal full-time.",
+        "ABANDONED! The contest has been stopped prematurely.",
+      ]);
+
+    case "match_suspended":
+      return pickVariant(event, [
+        "MATCH SUSPENDED! Play has been temporarily halted.",
+        "The match has been suspended. Further information is awaited.",
+        "SUSPENDED! The referee has stopped the contest for now.",
+      ]);
+
+    case "match_interrupted":
+      return pickVariant(event, [
+        "MATCH INTERRUPTED! Play has been stopped temporarily.",
+        "The match is currently interrupted.",
+        "Play has been interrupted. We await the next update.",
+      ]);
+
+    case "goal": {
+      const assist =
+        getAssistText(event);
+
+      if (assist) {
+        return pickVariant(event, [
+          `GOAL! ${player} finds the net for ${team}, with ${assist} providing the assist!${score ? ` The score is now ${score}.` : ""}`,
+          `⚽ GOAL! ${player} finishes for ${team} after a pass from ${assist}.${score ? ` ${score}.` : ""}`,
+          `${team} strike! ${player} scores and ${assist} gets the assist.${score ? ` ${score}.` : ""}`,
+        ]);
+      }
+
+      return pickVariant(event, [
+        `GOAL! ${player} finds the net for ${team}!${score ? ` The score is now ${score}.` : ""}`,
+        `⚽ GOAL! ${team} have scored! ${player} is the name on the scoresheet.${score ? ` ${score}.` : ""}`,
+        `It's in! ${player} has put ${team} on the scoresheet.${score ? ` ${score}.` : ""}`,
+        `${team} strike! ${player} finishes the move.${score ? ` ${score}.` : ""}`,
+      ]);
+    }
 
     case "penalty_goal":
       return pickVariant(event, [
@@ -241,22 +301,15 @@ function getEventCommentary(
     case "own_goal":
       return pickVariant(event, [
         `OWN GOAL! A cruel moment sees the ball end up in the wrong net.${score ? ` ${score}.` : ""}`,
-        `Oh no! An own goal changes the score in this match.${score ? ` ${score}.` : ""}`,
+        `Oh no! An own goal changes the score.${score ? ` ${score}.` : ""}`,
         `OWN GOAL! ${team} benefit from a huge slice of fortune.${score ? ` ${score}.` : ""}`,
       ]);
 
     case "missed_penalty":
       return pickVariant(event, [
         `PENALTY MISSED! ${player} cannot convert from the spot for ${team}.`,
-        `What a chance! The penalty is missed by ${player}.`,
+        `What a chance! ${player} misses from the penalty spot.`,
         `Penalty drama! ${player} fails to find the net from the spot.`,
-      ]);
-
-    case "assist":
-      return pickVariant(event, [
-        `ASSIST! ${player} provides the final pass in a decisive attacking move.`,
-        `Great contribution from ${player}, who supplies the assist.`,
-        `The assist goes to ${player} after a quality piece of attacking play.`,
       ]);
 
     case "yellow_card":
@@ -282,16 +335,16 @@ function getEventCommentary(
 
     case "substitution":
       return pickVariant(event, [
-        `🔄 SUBSTITUTION: ${player} comes on for ${team}.`,
-        `Change made by ${team}. ${player} is introduced.`,
-        `Fresh legs! ${team} make a substitution, bringing ${player} into the action.`,
+        `🔄 SUBSTITUTION: ${player} is introduced by ${team}.`,
+        `Change made by ${team}. ${player} comes into the action.`,
+        `Fresh legs! ${team} make a substitution, bringing ${player} on.`,
       ]);
 
     case "var":
       return pickVariant(event, [
-        `📺 VAR CHECK: The officials are reviewing a key moment.`,
-        `VAR drama! The referee is checking the incident with the video officials.`,
-        `📺 Video review underway. Everyone is waiting for the referee's decision.`,
+        "📺 VAR CHECK: The officials are reviewing a key moment.",
+        "VAR drama! The referee is checking the incident with the video officials.",
+        "📺 Video review underway. Everyone is waiting for the referee's decision.",
       ]);
 
     case "corner":
@@ -318,7 +371,7 @@ function getEventCommentary(
     case "offside":
       return pickVariant(event, [
         `Offside flag raised against ${team}${player ? ` — ${player}` : ""}.`,
-        `The attack is stopped for offside.`,
+        "The attack is stopped for offside.",
         `Offside! ${team}'s attacking move comes to an end.`,
       ]);
 
@@ -331,15 +384,9 @@ function getEventCommentary(
 
     default:
       return pickVariant(event, [
-        `${event.eventType.replace(
-          /_/g,
-          " "
-        )} recorded in the match.`,
-        `Match update: ${event.eventType.replace(
-          /_/g,
-          " "
-        )}.`,
-        `Another important moment has been recorded in the match.`,
+        `${event.eventType.replace(/_/g, " ")} recorded in the match.`,
+        `Match update: ${event.eventType.replace(/_/g, " ")}.`,
+        "Another important moment has been recorded in the match.",
       ]);
   }
 }
@@ -357,30 +404,53 @@ export function buildFacebookMessage(
     getMinuteText(event);
 
   const competition =
-    typeof event.eventData?.competition ===
+    getCompetitionText(event);
+
+  const status =
+    typeof event.eventData?.status ===
     "string"
-      ? event.eventData.competition
+      ? event.eventData.status
       : "";
 
-  const footer =
-    competition
-      ? `\n\n🏆 ${competition}`
-      : "";
+  const footerParts: string[] =
+    [];
+
+  if (competition) {
+    footerParts.push(
+      `🏆 ${competition}`
+    );
+  }
+
+  if (
+    status === "PEN" ||
+    event.eventType ===
+      "penalties_started"
+  ) {
+    footerParts.push(
+      "🎯 Penalty shootout"
+    );
+  }
 
   const timeLine =
     minute &&
     ![
       "match_started",
+      "first_half_started",
       "half_time",
       "second_half_started",
       "extra_time_started",
       "extra_time_break",
       "penalties_started",
       "full_time",
+      "match_postponed",
+      "match_cancelled",
+      "match_abandoned",
+      "match_suspended",
+      "match_interrupted",
     ].includes(
       event.eventType
     )
-      ? `\n⏱️ ${minute}`
+      ? `⏱️ ${minute}`
       : "";
 
   return [
@@ -388,7 +458,8 @@ export function buildFacebookMessage(
     "",
     commentary,
     timeLine,
-    footer,
+    "",
+    ...footerParts,
     "",
     "#DynaSport",
     "#Football",
@@ -397,7 +468,8 @@ export function buildFacebookMessage(
     .filter(
       (part) =>
         part !== undefined &&
-        part !== null
+        part !== null &&
+        part !== ""
     )
     .join("\n");
-}
+                                                     }

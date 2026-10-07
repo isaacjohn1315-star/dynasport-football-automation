@@ -1,19 +1,21 @@
-const GRAPH_API_VERSION = "v24.0";
+const GRAPH_API_VERSION = "v23.0";
 
-const PAGE_ID =
-  process.env.FACEBOOK_PAGE_ID;
-
-const PAGE_ACCESS_TOKEN =
-  process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
-
-export async function postToFacebook(
-  message: string
-): Promise<{
+type FacebookResult = {
   success: boolean;
   postId?: string;
   error?: string;
-}> {
-  if (!PAGE_ID) {
+};
+
+export async function postToFacebook(
+  message: string
+): Promise<FacebookResult> {
+  const pageId =
+    process.env.FACEBOOK_PAGE_ID;
+
+  const accessToken =
+    process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+
+  if (!pageId) {
     return {
       success: false,
       error:
@@ -21,7 +23,7 @@ export async function postToFacebook(
     };
   }
 
-  if (!PAGE_ACCESS_TOKEN) {
+  if (!accessToken) {
     return {
       success: false,
       error:
@@ -32,63 +34,107 @@ export async function postToFacebook(
   if (!message.trim()) {
     return {
       success: false,
-      error: "Facebook message is empty",
+      error:
+        "Facebook message is empty",
     };
   }
 
   const url =
-    `https://graph.facebook.com/${GRAPH_API_VERSION}` +
-    `/${PAGE_ID}/feed`;
+    `https://graph.facebook.com/${GRAPH_API_VERSION}/${pageId}/feed`;
 
   try {
-    const response = await fetch(
-      url,
-      {
+    const response =
+      await fetch(url, {
         method: "POST",
-
         headers: {
           "Content-Type":
-            "application/json",
+            "application/x-www-form-urlencoded",
         },
-
-        body: JSON.stringify({
-          message,
-          access_token:
-            PAGE_ACCESS_TOKEN,
-        }),
-
+        body:
+          new URLSearchParams({
+            message,
+            access_token:
+              accessToken,
+          }).toString(),
         cache: "no-store",
-      }
-    );
+      });
 
-    const data =
-      await response.json();
+    let data:
+      | Record<string, unknown>
+      | null = null;
 
-    if (
-      !response.ok ||
-      data?.error
-    ) {
+    try {
+      data =
+        (await response.json()) as Record<
+          string,
+          unknown
+        >;
+    } catch {
       return {
         success: false,
-
         error:
-          data?.error?.message ||
-          `Facebook API request failed: ${response.status}`,
+          `Facebook returned invalid JSON (${response.status})`,
+      };
+    }
+
+    if (!response.ok) {
+      const error =
+        data?.error;
+
+      if (
+        error &&
+        typeof error === "object"
+      ) {
+        const errorObject =
+          error as Record<
+            string,
+            unknown
+          >;
+
+        const message =
+          typeof errorObject.message ===
+          "string"
+            ? errorObject.message
+            : "Facebook API request failed";
+
+        return {
+          success: false,
+          error:
+            `Facebook API error: ${message}`,
+        };
+      }
+
+      return {
+        success: false,
+        error:
+          `Facebook API request failed (${response.status})`,
+      };
+    }
+
+    const postId =
+      typeof data?.id === "string"
+        ? data.id
+        : undefined;
+
+    if (!postId) {
+      return {
+        success: false,
+        error:
+          "Facebook accepted the request but did not return a post ID",
       };
     }
 
     return {
       success: true,
-      postId: data?.id,
+      postId,
     };
   } catch (error) {
     return {
       success: false,
-
       error:
         error instanceof Error
-          ? error.message
-          : "Unknown Facebook error",
+          ? `Facebook network error: ${error.message}`
+          : "Facebook network error",
     };
   }
 }

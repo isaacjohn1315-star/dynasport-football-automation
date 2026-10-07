@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+
 import {
   buildLifecycleEvents,
   LifecycleEvent,
@@ -11,15 +12,20 @@ export async function getNewEvents(
 ): Promise<LifecycleEvent[]> {
   const sql = getDb();
 
-  const lifecycleEvents = buildLifecycleEvents(fixture);
+  const lifecycleEvents =
+    buildLifecycleEvents(fixture);
 
-  if (lifecycleEvents.length === 0) {
+  if (
+    lifecycleEvents.length === 0
+  ) {
     return [];
   }
 
   const newEvents: LifecycleEvent[] = [];
 
-  for (const event of lifecycleEvents) {
+  for (
+    const event of lifecycleEvents
+  ) {
     const existing = await sql`
       SELECT id
       FROM posted_events
@@ -27,7 +33,9 @@ export async function getNewEvents(
       LIMIT 1
     `;
 
-    if (existing.length === 0) {
+    if (
+      existing.length === 0
+    ) {
       newEvents.push(event);
     }
   }
@@ -59,9 +67,29 @@ export async function markEventAsPosted(
       ${event.playerName},
       ${JSON.stringify(event.eventData)}
     )
-    ON CONFLICT (event_key) DO NOTHING
+    ON CONFLICT (event_key)
+    DO NOTHING
     RETURNING id
   `;
 
   return result.length > 0;
 }
+
+export async function markEventsAsPosted(
+  events: LifecycleEvent[]
+): Promise<LifecycleEvent[]> {
+  const posted: LifecycleEvent[] = [];
+
+  for (
+    const event of events
+  ) {
+    const saved =
+      await markEventAsPosted(event);
+
+    if (saved) {
+      posted.push(event);
+    }
+  }
+
+  return posted;
+      }

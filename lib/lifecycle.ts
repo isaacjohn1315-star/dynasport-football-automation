@@ -35,12 +35,23 @@ function createStatusEvent(
     teamName: null,
     playerName: null,
     eventData: {
-      status: fixture.fixture?.status?.short ?? null,
-      statusLong: fixture.fixture?.status?.long ?? null,
-      homeTeam: fixture.teams?.home?.name ?? null,
-      awayTeam: fixture.teams?.away?.name ?? null,
-      homeScore: fixture.goals?.home ?? null,
-      awayScore: fixture.goals?.away ?? null,
+      status:
+        fixture.fixture?.status?.short ?? null,
+
+      statusLong:
+        fixture.fixture?.status?.long ?? null,
+
+      homeTeam:
+        fixture.teams?.home?.name ?? null,
+
+      awayTeam:
+        fixture.teams?.away?.name ?? null,
+
+      homeScore:
+        fixture.goals?.home ?? null,
+
+      awayScore:
+        fixture.goals?.away ?? null,
     },
   };
 }
@@ -58,21 +69,48 @@ function createFixtureEvent(
   const eventType = getEventType(event);
 
   return {
-    eventKey: createEventKey(fixtureId, event),
+    eventKey: createEventKey(
+      fixtureId,
+      event
+    ),
+
     fixtureId,
+
     eventType,
-    eventMinute: event.time?.elapsed ?? null,
-    teamName: event.team?.name ?? null,
-    playerName: event.player?.name ?? null,
+
+    eventMinute:
+      event.time?.elapsed ?? null,
+
+    teamName:
+      event.team?.name ?? null,
+
+    playerName:
+      event.player?.name ?? null,
+
     eventData: {
-      type: event.type ?? null,
-      detail: event.detail ?? null,
-      comments: event.comments ?? null,
-      minute: event.time?.elapsed ?? null,
-      extraMinute: event.time?.extra ?? null,
-      team: event.team ?? null,
-      player: event.player ?? null,
-      assist: event.assist ?? null,
+      type:
+        event.type ?? null,
+
+      detail:
+        event.detail ?? null,
+
+      comments:
+        event.comments ?? null,
+
+      minute:
+        event.time?.elapsed ?? null,
+
+      extraMinute:
+        event.time?.extra ?? null,
+
+      team:
+        event.team ?? null,
+
+      player:
+        event.player ?? null,
+
+      assist:
+        event.assist ?? null,
     },
   };
 }
@@ -80,21 +118,23 @@ function createFixtureEvent(
 export function buildLifecycleEvents(
   fixture: FootballFixture
 ): LifecycleEvent[] {
-  const fixtureId = fixture.fixture?.id;
+  const fixtureId =
+    fixture.fixture?.id;
 
   if (!fixtureId) {
     return [];
   }
 
-  const status = fixture.fixture?.status?.short ?? "";
+  const status =
+    fixture.fixture?.status?.short ?? "";
 
   const lifecycle: LifecycleEvent[] = [];
 
   /*
-   * Match started.
+   * MATCH STARTED
    *
-   * Once API-Football reports 1H or any later active/finished
-   * status, the match has definitely started.
+   * Once the fixture reaches any live or
+   * completed state, the match has started.
    */
   if (
     [
@@ -109,12 +149,13 @@ export function buildLifecycleEvents(
       "PEN",
     ].includes(status)
   ) {
-    const event = createStatusEvent(
-      fixture,
-      "started",
-      "match_started",
-      1
-    );
+    const event =
+      createStatusEvent(
+        fixture,
+        "started",
+        "match_started",
+        1
+      );
 
     if (event) {
       lifecycle.push(event);
@@ -122,7 +163,7 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Half-time.
+   * HALF-TIME
    */
   if (
     [
@@ -136,12 +177,13 @@ export function buildLifecycleEvents(
       "PEN",
     ].includes(status)
   ) {
-    const event = createStatusEvent(
-      fixture,
-      "half_time",
-      "half_time",
-      45
-    );
+    const event =
+      createStatusEvent(
+        fixture,
+        "half_time",
+        "half_time",
+        45
+      );
 
     if (event) {
       lifecycle.push(event);
@@ -149,7 +191,7 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Second half started.
+   * SECOND HALF STARTED
    */
   if (
     [
@@ -162,12 +204,13 @@ export function buildLifecycleEvents(
       "PEN",
     ].includes(status)
   ) {
-    const event = createStatusEvent(
-      fixture,
-      "second_half",
-      "second_half_started",
-      46
-    );
+    const event =
+      createStatusEvent(
+        fixture,
+        "second_half",
+        "second_half_started",
+        46
+      );
 
     if (event) {
       lifecycle.push(event);
@@ -175,7 +218,7 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Extra time.
+   * EXTRA TIME STARTED
    */
   if (
     [
@@ -186,12 +229,13 @@ export function buildLifecycleEvents(
       "PEN",
     ].includes(status)
   ) {
-    const event = createStatusEvent(
-      fixture,
-      "extra_time",
-      "extra_time_started",
-      91
-    );
+    const event =
+      createStatusEvent(
+        fixture,
+        "extra_time",
+        "extra_time_started",
+        91
+      );
 
     if (event) {
       lifecycle.push(event);
@@ -199,20 +243,18 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Penalty shootout.
+   * EXTRA-TIME BREAK
    */
   if (
-    [
-      "P",
-      "PEN",
-    ].includes(status)
+    ["BT"].includes(status)
   ) {
-    const event = createStatusEvent(
-      fixture,
-      "penalties",
-      "penalties_started",
-      null
-    );
+    const event =
+      createStatusEvent(
+        fixture,
+        "extra_time_break",
+        "extra_time_break",
+        null
+      );
 
     if (event) {
       lifecycle.push(event);
@@ -220,7 +262,26 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Full-time.
+   * PENALTY SHOOTOUT
+   */
+  if (
+    ["P", "PEN"].includes(status)
+  ) {
+    const event =
+      createStatusEvent(
+        fixture,
+        "penalties",
+        "penalties_started",
+        null
+      );
+
+    if (event) {
+      lifecycle.push(event);
+    }
+  }
+
+  /*
+   * FULL-TIME
    */
   if (
     [
@@ -229,12 +290,14 @@ export function buildLifecycleEvents(
       "PEN",
     ].includes(status)
   ) {
-    const event = createStatusEvent(
-      fixture,
-      "full_time",
-      "full_time",
-      fixture.fixture?.status?.elapsed ?? null
-    );
+    const event =
+      createStatusEvent(
+        fixture,
+        "full_time",
+        "full_time",
+        fixture.fixture?.status
+          ?.elapsed ?? null
+      );
 
     if (event) {
       lifecycle.push(event);
@@ -242,30 +305,43 @@ export function buildLifecycleEvents(
   }
 
   /*
-   * Individual API-Football events:
+   * API-FOOTBALL MATCH EVENTS
    *
-   * Goals
-   * Own goals
-   * Missed penalties
-   * Yellow cards
-   * Red cards
-   * Second yellows
-   * Substitutions
-   * VAR
-   * Corners, if supplied by the API response
-   * Other event types supplied by API-Football
+   * Every event returned by the API is
+   * processed individually.
    */
-  const fixtureEvents = Array.isArray(fixture.events)
-    ? fixture.events
-    : [];
+  const fixtureEvents =
+    Array.isArray(fixture.events)
+      ? fixture.events
+      : [];
 
   for (const event of fixtureEvents) {
-    const normalized = createFixtureEvent(fixture, event);
+    const normalized =
+      createFixtureEvent(
+        fixture,
+        event
+      );
 
     if (normalized) {
       lifecycle.push(normalized);
     }
   }
 
-  return lifecycle;
-    }
+  /*
+   * Remove accidental duplicate event
+   * keys from the same API response.
+   */
+  const uniqueEvents =
+    new Map<string, LifecycleEvent>();
+
+  for (const event of lifecycle) {
+    uniqueEvents.set(
+      event.eventKey,
+      event
+    );
+  }
+
+  return Array.from(
+    uniqueEvents.values()
+  );
+      }

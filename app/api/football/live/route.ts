@@ -4,19 +4,24 @@ import { COMPETITIONS } from "@/lib/competitions";
 
 export async function GET() {
   try {
-    const results = [];
+    // One API request gets all currently live fixtures.
+    const data = await footballApiRequest("/fixtures", {
+      live: "all",
+    });
 
-    for (const competition of COMPETITIONS) {
-      const data = await footballApiRequest("/fixtures", {
-        live: "all",
-        league: competition.id,
-      });
+    const competitionIds = new Set(
+      COMPETITIONS.map((competition) => competition.id)
+    );
 
-      if (Array.isArray(data.response)) {
-        results.push(
-          ...data.response.map((match: any) => ({
-            competition: competition.name,
-            competitionId: competition.id,
+    const matches = Array.isArray(data.response)
+      ? data.response
+          .filter((match: any) =>
+            competitionIds.has(match.league?.id)
+          )
+          .map((match: any) => ({
+            competition: match.league?.name,
+            competitionId: match.league?.id,
+            country: match.league?.country,
             fixtureId: match.fixture?.id,
             status: match.fixture?.status?.short,
             elapsed: match.fixture?.status?.elapsed,
@@ -25,14 +30,14 @@ export async function GET() {
             homeScore: match.goals?.home,
             awayScore: match.goals?.away,
           }))
-        );
-      }
-    }
+      : [];
 
     return NextResponse.json({
       success: true,
-      count: results.length,
-      matches: results,
+      count: matches.length,
+      matches,
+      requestsUsed: 1,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     return NextResponse.json(
@@ -46,4 +51,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-                               }
+}

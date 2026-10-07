@@ -17,6 +17,16 @@ export async function GET(
     const cronSecret =
       process.env.CRON_SECRET;
 
+    if (!cronSecret) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "CRON_SECRET is not configured",
+        },
+        { status: 500 }
+      );
+    }
+
     const authorization =
       request.headers.get("authorization");
 
@@ -25,10 +35,7 @@ export async function GET(
         ? authorization.slice(7)
         : null;
 
-    if (
-      cronSecret &&
-      providedSecret !== cronSecret
-    ) {
+    if (providedSecret !== cronSecret) {
       return NextResponse.json(
         {
           success: false,
@@ -120,4 +127,4 @@ export async function GET(
       { status: 500 }
     );
   }
-}
+        }

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { footballApiRequest } from "@/lib/football-api";
 import { COMPETITIONS } from "@/lib/competitions";
-import { getNewEvents, markEventAsPosted } from "@/lib/event-processor";
+import {
+  getNewEvents,
+  markEventAsPosted,
+} from "@/lib/event-processor";
 import { createFacebookMessage } from "@/lib/messages";
 import { postToFacebook } from "@/lib/facebook";
 import { FootballFixture } from "@/lib/events";
@@ -42,7 +45,7 @@ export async function GET(
       }
     );
 
-    const competitionIds = new Set(
+    const competitionIds = new Set<number>(
       COMPETITIONS.map(
         (competition) => competition.id
       )
@@ -117,4 +120,4 @@ export async function GET(
       { status: 500 }
     );
   }
-      }
+}

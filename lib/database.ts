@@ -3,55 +3,93 @@ import { getDb } from "@/lib/db";
 export async function initializeDatabase() {
   const sql = getDb();
 
-  /*
-   * Stores every event that has successfully
-   * been published to Facebook.
-   *
-   * event_key is unique so the same football
-   * event cannot be permanently recorded twice.
-   */
   await sql`
     CREATE TABLE IF NOT EXISTS posted_events (
-      id SERIAL PRIMARY KEY,
+      id BIGSERIAL PRIMARY KEY,
 
-      event_key TEXT UNIQUE NOT NULL,
-
-      fixture_id INTEGER NOT NULL,
-
+      fixture_id BIGINT NOT NULL,
+      event_key TEXT NOT NULL UNIQUE,
       event_type TEXT NOT NULL,
 
       event_minute INTEGER,
+      event_data JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-      team_name TEXT,
+      status TEXT NOT NULL DEFAULT 'claimed',
 
-      player_name TEXT,
+      facebook_post_id TEXT,
 
-      event_data JSONB,
+      claim_token TEXT,
+      claim_expires_at TIMESTAMPTZ,
 
-      posted_at TIMESTAMPTZ DEFAULT NOW()
-    );
-  `;
-
-  /*
-   * These indexes make repeated Cron checks
-   * considerably cheaper as the table grows.
-   */
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS
-    posted_events_fixture_id_idx
-    ON posted_events (fixture_id);
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      claimed_at TIMESTAMPTZ,
+      posted_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `;
 
   await sql`
-    CREATE INDEX IF NOT EXISTS
-    posted_events_posted_at_idx
-    ON posted_events (posted_at);
+    CREATE INDEX IF NOT EXISTS idx_posted_events_fixture_id
+    ON posted_events (fixture_id)
   `;
 
   await sql`
-    CREATE INDEX IF NOT EXISTS
-    posted_events_event_type_idx
-    ON posted_events (event_type);
+    CREATE INDEX IF NOT EXISTS idx_posted_events_status
+    ON posted_events (status)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_posted_events_claim_expires
+    ON posted_events (claim_expires_at)
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS event_data JSONB NOT NULL DEFAULT '{}'::jsonb
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'claimed'
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS facebook_post_id TEXT
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS claim_token TEXT
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMPTZ
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ
+  `;
+
+  await sql`
+    ALTER TABLE posted_events
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  `;
+
+  await sql`
+    UPDATE posted_events
+    SET
+      status = 'posted',
+      posted_at = COALESCE(posted_at, created_at),
+      updated_at = NOW()
+    WHERE status = 'claimed'
+      AND facebook_post_id IS NOT NULL
   `;
 }

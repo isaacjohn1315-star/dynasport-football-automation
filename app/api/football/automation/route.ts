@@ -13,10 +13,6 @@ import {
 } from "@/lib/events";
 
 import {
-  getLifecycleEvents,
-} from "@/lib/lifecycle";
-
-import {
   buildFacebookMessage,
 } from "@/lib/messages";
 
@@ -111,13 +107,16 @@ export async function GET(
       fixturesProcessed++;
 
       try {
-        const lifecycleEvents =
-          await getLifecycleEvents(
+        const newEvents =
+          await getNewEvents(
             fixture
           );
 
+        eventsDetected +=
+          newEvents.length;
+
         for (
-          const event of lifecycleEvents
+          const event of newEvents
         ) {
           event.eventData.competition =
             fixture.league?.name ??
@@ -147,82 +146,63 @@ export async function GET(
             fixture.goals?.away ??
             null;
 
-          eventsDetected++;
-
-          const newEvents =
-            await getNewEvents([
-              event,
-            ]);
+          const message =
+            buildFacebookMessage(
+              event
+            );
 
           if (
-            newEvents.length ===
-            0
+            !message ||
+            !message.trim()
           ) {
             eventsSkipped++;
             continue;
           }
 
-          for (
-            const enrichedEvent of newEvents
+          const facebookResult =
+            await postToFacebook(
+              message
+            );
+
+          if (
+            !facebookResult.success
           ) {
-            const message =
-              buildFacebookMessage(
-                enrichedEvent
-              );
-
-            if (
-              !message ||
-              !message.trim()
-            ) {
-              eventsSkipped++;
-              continue;
-            }
-
-            const facebookResult =
-              await postToFacebook(
-                message
-              );
-
-            if (
-              !facebookResult.success
-            ) {
-              errors++;
-
-              fixtureResults.push({
-                fixtureId,
-                eventType:
-                  enrichedEvent.eventType,
-                success: false,
-                error:
-                  facebookResult.error ??
-                  "Facebook posting failed",
-              });
-
-              continue;
-            }
-
-            const marked =
-              await markEventAsPosted(
-                enrichedEvent,
-                facebookResult.postId
-              );
-
-            if (marked) {
-              eventsPosted++;
-            } else {
-              eventsSkipped++;
-            }
+            errors++;
 
             fixtureResults.push({
               fixtureId,
               eventType:
-                enrichedEvent.eventType,
-              success: marked,
-              facebookPostId:
-                facebookResult.postId ??
-                null,
+                event.eventType,
+              success: false,
+              error:
+                facebookResult.error ??
+                "Facebook posting failed",
             });
+
+            continue;
           }
+
+          const marked =
+            await markEventAsPosted(
+              event,
+              facebookResult.postId
+            );
+
+          if (marked) {
+            eventsPosted++;
+          } else {
+            eventsSkipped++;
+          }
+
+          fixtureResults.push({
+            fixtureId,
+            eventType:
+              event.eventType,
+            success: marked,
+            facebookPostId:
+              facebookResult.postId ??
+              null,
+          });
         }
       } catch (error) {
         errors++;
@@ -271,4 +251,4 @@ export async function GET(
       }
     );
   }
-        }
+}

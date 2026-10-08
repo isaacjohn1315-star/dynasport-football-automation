@@ -9,7 +9,7 @@ import {
 } from "@/lib/events";
 
 import {
-  createFacebookMessage,
+  buildFacebookMessage,
 } from "@/lib/messages";
 
 export async function GET() {
@@ -17,57 +17,78 @@ export async function GET() {
     const mockFixture: FootballFixture = {
       fixture: {
         id: 999999,
-        date: new Date().toISOString(),
+
+        date:
+          new Date().toISOString(),
+
         status: {
           short: "2H",
-          long: "Second Half",
+
+          long:
+            "Second Half",
+
           elapsed: 67,
+
           extra: 0,
         },
       },
 
       league: {
         id: 39,
-        name: "Premier League",
-        country: "England",
+
+        name:
+          "Premier League",
+
+        country:
+          "England",
+
         season: 2026,
       },
 
       teams: {
         home: {
           id: 1001,
-          name: "DynaSport United",
+
+          name:
+            "DynaSport United",
         },
 
         away: {
           id: 1002,
-          name: "DynaSport City",
+
+          name:
+            "DynaSport City",
         },
       },
 
       goals: {
         home: 2,
+
         away: 1,
       },
 
       score: {
         halftime: {
           home: 1,
+
           away: 1,
         },
 
         fulltime: {
           home: null,
+
           away: null,
         },
 
         extratime: {
           home: null,
+
           away: null,
         },
 
         penalty: {
           home: null,
+
           away: null,
         },
       },
@@ -76,27 +97,39 @@ export async function GET() {
         {
           time: {
             elapsed: 67,
+
             extra: 0,
           },
 
           team: {
             id: 1001,
-            name: "DynaSport United",
+
+            name:
+              "DynaSport United",
           },
 
           player: {
             id: 5001,
-            name: "Alex Morgan",
+
+            name:
+              "Alex Morgan",
           },
 
           assist: {
             id: 5002,
-            name: "Daniel James",
+
+            name:
+              "Daniel James",
           },
 
-          type: "Goal",
-          detail: "Normal Goal",
-          comments: null,
+          type:
+            "Goal",
+
+          detail:
+            "Normal Goal",
+
+          comments:
+            null,
         },
       ],
     };
@@ -148,7 +181,7 @@ export async function GET() {
             event.eventType,
 
           message:
-            createFacebookMessage(
+            buildFacebookMessage(
               event
             ),
         })
@@ -195,9 +228,10 @@ export async function GET() {
             ? error.message
             : "Unknown test error",
       },
+
       {
         status: 500,
       }
     );
   }
-      }
+}

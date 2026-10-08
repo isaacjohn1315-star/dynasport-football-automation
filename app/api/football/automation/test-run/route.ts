@@ -1,327 +1,192 @@
 import {
-  NextRequest,
   NextResponse,
 } from "next/server";
-
-import {
-  footballApiRequest,
-} from "@/lib/football-api";
-
-import {
-  COMPETITION_IDS,
-} from "@/lib/competitions";
-
-import {
-  FootballFixture,
-} from "@/lib/events";
 
 import {
   getNewEvents,
 } from "@/lib/event-processor";
 
 import {
+  FootballFixture,
+} from "@/lib/events";
+
+import {
   buildFacebookMessage,
 } from "@/lib/messages";
 
-function isAuthorized(
-  request: NextRequest
-): boolean {
-  const expectedSecret =
-    process.env.CRON_SECRET;
-
-  if (!expectedSecret) {
-    return false;
-  }
-
-  const authorization =
-    request.headers.get(
-      "authorization"
-    );
-
-  if (!authorization) {
-    return false;
-  }
-
-  return (
-    authorization ===
-    `Bearer ${expectedSecret}`
-  );
-}
-
-function normalizeFixtures(
-  data: unknown
-): FootballFixture[] {
-  if (
-    !data ||
-    typeof data !== "object" ||
-    !("response" in data)
-  ) {
-    return [];
-  }
-
-  const response =
-    (data as {
-      response?: unknown;
-    }).response;
-
-  if (
-    !Array.isArray(response)
-  ) {
-    return [];
-  }
-
-  return response as FootballFixture[];
-}
-
-function isTrackedCompetition(
-  fixture: FootballFixture
-): boolean {
-  const leagueId =
-    fixture.league?.id;
-
-  return (
-    typeof leagueId === "number" &&
-    COMPETITION_IDS.has(
-      leagueId
-    )
-  );
-}
-
-function enrichEvent(
-  fixture: FootballFixture,
-  event: Awaited<
-    ReturnType<typeof getNewEvents>
-  >[number]
-) {
-  event.eventData.competition =
-    fixture.league?.name ??
-    null;
-
-  event.eventData.country =
-    fixture.league?.country ??
-    null;
-
-  event.eventData.season =
-    fixture.league?.season ??
-    null;
-
-  event.eventData.homeTeam =
-    fixture.teams?.home?.name ??
-    null;
-
-  event.eventData.awayTeam =
-    fixture.teams?.away?.name ??
-    null;
-
-  event.eventData.homeScore =
-    fixture.goals?.home ??
-    null;
-
-  event.eventData.awayScore =
-    fixture.goals?.away ??
-    null;
-}
-
-export async function GET(
-  request: NextRequest
-) {
-  if (
-    !isAuthorized(request)
-  ) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Unauthorized",
-      },
-      {
-        status: 401,
-      }
-    );
-  }
-
-  const startedAt =
-    Date.now();
-
+export async function GET() {
   try {
-    /*
-     * REAL API REQUEST
-     *
-     * This endpoint deliberately
-     * performs the same API-Football
-     * request as production.
-     *
-     * It does NOT post to Facebook.
-     * It does NOT mark events as posted.
-     *
-     * Therefore it is safe for
-     * inspecting what production
-     * would attempt to publish.
-     */
-    const data =
-      await footballApiRequest(
-        "/fixtures",
+    const mockFixture: FootballFixture = {
+      fixture: {
+        id: 888888,
+        date: new Date().toISOString(),
+        status: {
+          short: "2H",
+          long: "Second Half",
+          elapsed: 67,
+          extra: 0,
+        },
+      },
+
+      league: {
+        id: 39,
+        name: "Premier League",
+        country: "England",
+        season: 2026,
+      },
+
+      teams: {
+        home: {
+          id: 1001,
+          name: "DynaSport United",
+        },
+
+        away: {
+          id: 1002,
+          name: "DynaSport City",
+        },
+      },
+
+      goals: {
+        home: 2,
+        away: 1,
+      },
+
+      score: {
+        halftime: {
+          home: 1,
+          away: 1,
+        },
+
+        fulltime: {
+          home: null,
+          away: null,
+        },
+
+        extratime: {
+          home: null,
+          away: null,
+        },
+
+        penalty: {
+          home: null,
+          away: null,
+        },
+      },
+
+      events: [
         {
-          live: "all",
-        }
+          time: {
+            elapsed: 67,
+            extra: 0,
+          },
+
+          team: {
+            id: 1001,
+            name: "DynaSport United",
+          },
+
+          player: {
+            id: 5001,
+            name: "Alex Morgan",
+          },
+
+          assist: {
+            id: 5002,
+            name: "Daniel James",
+          },
+
+          type: "Goal",
+          detail: "Normal Goal",
+          comments: null,
+        },
+      ],
+    };
+
+    const events =
+      await getNewEvents(
+        mockFixture
       );
 
-    const fixtures =
-      normalizeFixtures(data);
+    const messages =
+      events.map(
+        (event) => ({
+          eventKey:
+            event.eventKey,
 
-    const trackedFixtures =
-      fixtures.filter(
-        isTrackedCompetition
+          eventType:
+            event.eventType,
+
+          eventMinute:
+            event.eventMinute,
+
+          teamName:
+            typeof event.eventData
+              ?.teamName ===
+            "string"
+              ? event.eventData
+                  .teamName
+              : null,
+
+          playerName:
+            typeof event.eventData
+              ?.playerName ===
+            "string"
+              ? event.eventData
+                  .playerName
+              : null,
+
+          message:
+            buildFacebookMessage(
+              event
+            ),
+        })
       );
-
-    const fixtureResults: Array<{
-      fixtureId: number;
-      competition: string;
-      home: string;
-      away: string;
-      status: string;
-      score: string;
-      newEvents: Array<{
-        eventKey: string;
-        eventType: string;
-        minute: number | null;
-        team: string | null;
-        player: string | null;
-        message: string;
-      }>;
-    }> = [];
-
-    let totalNewEvents = 0;
-
-    for (
-      const fixture of trackedFixtures
-    ) {
-      const fixtureId =
-        fixture.fixture?.id;
-
-      if (
-        typeof fixtureId !== "number"
-      ) {
-        continue;
-      }
-
-      const events =
-        await getNewEvents(
-          fixture
-        );
-
-      for (
-        const event of events
-      ) {
-        enrichEvent(
-          fixture,
-          event
-        );
-      }
-
-      totalNewEvents +=
-        events.length;
-
-      fixtureResults.push({
-        fixtureId,
-
-        competition:
-          fixture.league?.name ??
-          "Unknown",
-
-        home:
-          fixture.teams?.home?.name ??
-          "Home",
-
-        away:
-          fixture.teams?.away?.name ??
-          "Away",
-
-        status:
-          fixture.fixture?.status
-            ?.short ??
-          "UNKNOWN",
-
-        score:
-          `${fixture.goals?.home ?? 0}-${fixture.goals?.away ?? 0}`,
-
-        newEvents:
-          events.map(
-            (event) => ({
-              eventKey:
-                event.eventKey,
-
-              eventType:
-                event.eventType,
-
-              minute:
-                event.eventMinute,
-
-              team:
-                event.teamName,
-
-              player:
-                event.playerName,
-
-              message:
-                buildFacebookMessage(
-                  event
-                ),
-            })
-          ),
-      });
-    }
 
     return NextResponse.json({
       success: true,
 
-      mode:
-        "DRY_RUN",
+      message:
+        "Football event/message test completed",
 
-      facebookPosting:
-        false,
+      fixture: {
+        id:
+          mockFixture.fixture?.id,
 
-      databaseWrites:
-        false,
+        competition:
+          mockFixture.league?.name,
 
-      apiRequest:
-        "fixtures?live=all",
+        home:
+          mockFixture.teams?.home?.name,
 
-      fixturesReturned:
-        fixtures.length,
+        away:
+          mockFixture.teams?.away?.name,
 
-      trackedFixtures:
-        trackedFixtures.length,
+        score:
+          `${mockFixture.goals?.home ?? 0}-${mockFixture.goals?.away ?? 0}`,
 
-      totalNewEvents,
+        status:
+          mockFixture.fixture?.status?.short,
+      },
 
-      fixtureResults,
+      eventsDetected:
+        events.length,
 
-      durationMs:
-        Date.now() -
-        startedAt,
-
-      timestamp:
-        new Date().toISOString(),
+      messages,
     });
   } catch (error) {
     return NextResponse.json(
       {
         success: false,
 
-        mode:
-          "DRY_RUN",
-
         error:
           error instanceof Error
             ? error.message
-            : "Unknown dry-run error",
-
-        timestamp:
-          new Date().toISOString(),
+            : "Unknown test-run error",
       },
       {
         status: 500,
       }
     );
   }
-        }
+}

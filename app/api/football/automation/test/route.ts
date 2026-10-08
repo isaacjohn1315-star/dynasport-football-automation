@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
-  buildLifecycleEvents,
+  getLifecycleEvents,
 } from "@/lib/lifecycle";
 
 import {
@@ -9,7 +9,7 @@ import {
 } from "@/lib/events";
 
 import {
-  buildFacebookMessage,
+  createFacebookMessage,
 } from "@/lib/messages";
 
 export async function GET() {
@@ -37,13 +37,11 @@ export async function GET() {
         home: {
           id: 1001,
           name: "DynaSport United",
-          winner: null,
         },
 
         away: {
           id: 1002,
           name: "DynaSport City",
-          winner: null,
         },
       },
 
@@ -104,7 +102,7 @@ export async function GET() {
     };
 
     const lifecycleEvents =
-      buildLifecycleEvents(
+      await getLifecycleEvents(
         mockFixture
       );
 
@@ -150,7 +148,7 @@ export async function GET() {
             event.eventType,
 
           message:
-            buildFacebookMessage(
+            createFacebookMessage(
               event
             ),
         })
